@@ -96,21 +96,50 @@ class HKGAIModelProvider(ModelProvider):
         enable_thinking: bool = False,
     ) -> tuple[dict[str, Any], ModelResponse]:
         response = self.complete(messages, enable_thinking=enable_thinking)
-        text = response.content.strip()
-        if text.startswith("```"):
-            lines = text.splitlines()
-            if lines and lines[0].startswith("```"):
-                lines = lines[1:]
-            if lines and lines[-1].strip() == "```":
-                lines = lines[:-1]
-            text = "\n".join(lines).strip()
+        candidates = [response.content]
+        # Some OpenAI-compatible gateways place the final answer in the
+        # reasoning field when thinking mode is enabled. Prefer content, but
+        # accept reasoning as a compatibility fallback when it contains the
+        # requested JSON object.
+        if response.reasoning:
+            candidates.append(response.reasoning)
+
+        for candidate in candidates:
+            parsed = self._extract_json_object(candidate)
+            if parsed is not None:
+                return parsed, response
+        raise ProviderError("Modelhub did not return valid JSON")
+
+    @staticmethod
+    def _extract_json_object(text: str | None) -> dict[str, Any] | None:
+        """Extract a JSON object from common LLM response wrappers.
+
+        Besides plain JSON, models may add an explanation, a Markdown fence,
+        or thinking tags even when explicitly instructed not to. raw_decode
+        lets us find the first complete object without brittle brace slicing.
+        """
+        candidate = str(text or "").strip().lstrip("\ufeff")
+        if not candidate:
+            return None
+
         try:
-            parsed = json.loads(text)
-        except json.JSONDecodeError as exc:
-            raise ProviderError("Modelhub did not return valid JSON") from exc
-        if not isinstance(parsed, dict):
-            raise ProviderError("Modelhub JSON response must be an object")
-        return parsed, response
+            direct = json.loads(candidate)
+        except json.JSONDecodeError:
+            direct = None
+        if isinstance(direct, dict):
+            return direct
+
+        decoder = json.JSONDecoder()
+        for index, character in enumerate(candidate):
+            if character != "{":
+                continue
+            try:
+                parsed, _ = decoder.raw_decode(candidate[index:])
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed, dict):
+                return parsed
+        return None
 
     def _request_json(
         self,
@@ -140,4 +169,3 @@ class HKGAIModelProvider(ModelProvider):
         if not isinstance(payload, dict):
             raise ProviderError("Modelhub returned an invalid JSON object")
         return payload
-

@@ -83,6 +83,47 @@ def test_complete_json_parses_model_content() -> None:
     assert response.usage["total_tokens"] == 20
 
 
+def test_complete_json_extracts_object_from_markdown_and_explanation() -> None:
+    session = FakeSession()
+    provider = HKGAIModelProvider(settings(), session=session)
+    response_text = "以下是结果：\n```json\n{\"industry\": \"工业机器人\"}\n```\n请审阅。"
+
+    assert provider._extract_json_object(response_text) == {
+        "industry": "工业机器人"
+    }
+
+
+def test_complete_json_handles_braces_inside_json_strings() -> None:
+    session = FakeSession()
+    provider = HKGAIModelProvider(settings(), session=session)
+    response_text = '说明文字 {\"note\": \"比较集合{A与B}\", \"valid\": true} 结束'
+
+    assert provider._extract_json_object(response_text) == {
+        "note": "比较集合{A与B}",
+        "valid": True,
+    }
+
+
+def test_complete_json_falls_back_to_reasoning_field() -> None:
+    session = FakeSession()
+    provider = HKGAIModelProvider(settings(), session=session)
+    provider.complete = lambda *args, **kwargs: __import__(
+        "src.providers.base", fromlist=["ModelResponse"]
+    ).ModelResponse(
+        content="",
+        reasoning='推理完成。最终对象：{\"industry\": \"工业机器人\"}',
+        model="test-model",
+        usage={},
+    )
+
+    parsed, _ = provider.complete_json(
+        [ChatMessage(role="user", content="Return JSON")],
+        enable_thinking=True,
+    )
+
+    assert parsed == {"industry": "工业机器人"}
+
+
 def test_thinking_parameters_are_only_added_when_enabled() -> None:
     session = FakeSession()
     provider = HKGAIModelProvider(settings(), session=session)
