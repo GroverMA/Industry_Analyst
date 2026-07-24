@@ -1,0 +1,128 @@
+{
+  "sop_id": "generic_research_baseline",
+  "display_name": "通用行业研究方法基线（待替换为沙利文 SOP）",
+  "version": "1.0.0",
+  "pack_type": "baseline",
+  "locked": true,
+  "description": "用于快速跑通产品流程的临时方法包。沙利文 SOP Pack 上线后将整体替换本包。",
+  "rules": [
+    {
+      "rule_id": "BRIEF-001",
+      "title": "研究目的先行",
+      "instruction": "先写清研究目标；如存在业务决策，研究问题应服务该决策。如不存在业务决策，则定义探索性研究目的，不得虚构决策场景。",
+      "applies_to": ["brief", "plan"]
+    },
+    {
+      "rule_id": "BRIEF-002",
+      "title": "市场边界完整",
+      "instruction": "行业定义必须同时覆盖产品、客户、地域、价值链、时间、包含项和排除项。",
+      "applies_to": ["brief"]
+    },
+    {
+      "rule_id": "BRIEF-003",
+      "title": "歧义显性化",
+      "instruction": "不能自行掩盖定义歧义；无法确定的口径必须转化为信息缺口或向用户提出的澄清问题。",
+      "applies_to": ["brief", "plan"]
+    },
+    {
+      "rule_id": "PLAN-001",
+      "title": "任务可验证",
+      "instruction": "每项研究任务必须包含问题、假设、信息需求、来源类型、交付物和校验关卡。",
+      "applies_to": ["plan"]
+    },
+    {
+      "rule_id": "PLAN-002",
+      "title": "证据优先级",
+      "instruction": "优先政府与监管文件、公司公告与财报、正式数据库和行业协会；二手文章只能作为线索或辅助。",
+      "applies_to": ["plan"]
+    },
+    {
+      "rule_id": "PLAN-003",
+      "title": "反证要求",
+      "instruction": "每个关键假设都要主动寻找反证、冲突来源或可能使结论失效的条件。",
+      "applies_to": ["plan"]
+    },
+    {
+      "rule_id": "PLAN-004",
+      "title": "公司相关性",
+      "instruction": "行业研究必须最终映射到目标公司的能力、差距、选择和行动；没有目标公司时明确保持行业层结论。",
+      "applies_to": ["brief", "plan"]
+    },
+    {
+      "rule_id": "GOV-001",
+      "title": "人工确认",
+      "instruction": "市场边界和研究计划在进入证据检索前必须由用户确认。",
+      "applies_to": ["brief", "plan"]
+    },
+    {
+      "rule_id": "GOV-002",
+      "title": "事实观点分离",
+      "instruction": "后续研究必须区分事实、观点、推断和预测；规划阶段需预留相应证据要求。",
+      "applies_to": ["plan"]
+    },
+    {
+      "rule_id": "ANALYSIS-001",
+      "title": "仅使用已核验证据",
+      "instruction": "行业分析只能引用已通过人工接受的Evidence ID；证据不足时输出信息缺口，不得用模型常识补齐。",
+      "applies_to": ["analysis"]
+    },
+    {
+      "rule_id": "ANALYSIS-002",
+      "title": "事实与判断分层",
+      "instruction": "明确区分事实综合、来源观点、分析师推断和商业判断，并为每项推断解释机制、边界和不确定性。",
+      "applies_to": ["analysis"]
+    },
+    {
+      "rule_id": "ANALYSIS-003",
+      "title": "竞争关系可解释",
+      "instruction": "可比公司不自动等于直接竞争者；必须根据产品、客户、地域、价值链位置和商业模式解释直接、间接、标杆或相邻关系。",
+      "applies_to": ["analysis"]
+    },
+    {
+      "rule_id": "ANALYSIS-004",
+      "title": "当前分析与预测分离",
+      "instruction": "本阶段只分析当前结构、机制和已发生变化，不生成未来趋势、情景概率或行动建议；预测必须进入独立的Future Intelligence阶段。",
+      "applies_to": ["analysis"]
+    },
+    {
+      "rule_id": "FUTURE-001",
+      "title": "预测链条可追溯",
+      "instruction": "每项趋势必须连接已接受证据与已批准行业判断，并依次说明观察信号、因果机制、关键假设和预测结果。",
+      "applies_to": ["future"]
+    },
+    {
+      "rule_id": "FUTURE-002",
+      "title": "玩家行动分级",
+      "instruction": "玩家行动必须区分已观察、已宣布和分析推断；不得把推断的下一步布局陈述为已发生事实。",
+      "applies_to": ["future"]
+    },
+    {
+      "rule_id": "FUTURE-003",
+      "title": "多情景而非单点答案",
+      "instruction": "至少形成基准、加速和受阻三种情景，并明确各自触发条件、结果、领先指标和失效条件。",
+      "applies_to": ["future"]
+    },
+    {
+      "rule_id": "FUTURE-004",
+      "title": "预测可证伪",
+      "instruction": "每项趋势必须提供可监测的领先指标与反证条件；出现反证时必须允许降低置信度或撤销判断。",
+      "applies_to": ["future"]
+    },
+    {
+      "rule_id": "FUTURE-005",
+      "title": "禁止虚假精确度",
+      "instruction": "在没有经过验证的统计模型与数据集时，不得输出精确概率或伪装成机器学习结果；使用透明的分项置信度与定性情景。",
+      "applies_to": ["future"]
+    }
+  ],
+  "constraints": {
+    "min_key_questions": 5,
+    "max_key_questions": 12,
+    "min_hypotheses": 3,
+    "min_tasks": 5,
+    "max_tasks": 10,
+    "min_human_review_gates": 2,
+    "require_inclusions_and_exclusions": true,
+    "require_counter_evidence": true
+  }
+}

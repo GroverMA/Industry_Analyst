@@ -1,0 +1,23 @@
+# Local credentials. Never commit these files.
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+
+# Local research sessions and generated snapshots
+.Rhistory
+*.industry-project.json
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+
+# Local IDE and OS files
+.DS_Store
+.idea/
+.vscode/

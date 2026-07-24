@@ -1,0 +1,27 @@
+{
+  "project_name": "中国分子诊断行业战略研究",
+  "industry": "分子诊断",
+  "region": "中国",
+  "target_company": "基矩诊断（虚构演示企业）",
+  "company_strategy_enabled": true,
+  "company_strategy_objective": "在资源有限、风险可控并保持核心PCR业务稳定的前提下，确定2026—2030年最值得优先投入的技术与解决方案方向，建立差异化竞争位置和可持续增长路径。",
+  "decision_context": "在资源有限的情况下，决定2026—2030年应重点投入PCR、数字PCR、NGS还是一体化分子诊断解决方案。",
+  "research_objective": "识别竞争格局、市场驱动因素与技术商业模式变化，并形成面向目标企业的资源配置建议。",
+  "time_horizon": "2026—2030",
+  "output_language": "简体中文",
+  "research_mode": "golden_case",
+  "industry_pack": "molecular_diagnostics_cn",
+  "current_step": "research_planning",
+  "workflow_status": {
+    "research_brief": "completed",
+    "research_planning": "ready",
+    "evidence_collection": "not_started",
+    "evidence_qa": "not_started",
+    "industry_analysis": "not_started",
+    "future_intelligence": "not_started",
+    "company_assessment": "not_started",
+    "action_plan": "not_started",
+    "human_review": "not_started",
+    "decision_report": "not_started"
+  }
+}
