@@ -17,7 +17,7 @@ from src.models.enterprise import (
     EnterpriseSensitivity,
     EnterpriseStatementType,
 )
-from src.models.evidence import EvidenceReviewStatus
+from src.models.evidence import EvidenceCollectionArtifact, EvidenceReviewStatus
 from src.models.future import ForecastReviewStatus, ScenarioType
 from src.models.research import MarketDefinition, ResearchBriefArtifact, ResearchIntent
 from src.providers.base import ProviderError
@@ -93,6 +93,35 @@ def _records(value) -> list[dict]:
     if hasattr(value, "to_dict"):
         return value.to_dict("records")
     return list(value)
+
+
+def _recommended_evidence_ids(
+    artifact: EvidenceCollectionArtifact,
+) -> set[str]:
+    """Recommend credible evidence while keeping every research task covered.
+
+    QA >= 60 remains the normal recommendation threshold. If a task has no
+    candidate above that threshold, include its highest-scoring candidate so
+    the quick workflow can surface the weak link for explicit human review
+    instead of silently selecting evidence from only one well-covered task.
+    """
+    recommended = {
+        item.evidence_id
+        for item in artifact.evidence
+        if item.review_status == EvidenceReviewStatus.ACCEPTED
+        or (
+            item.review_status == EvidenceReviewStatus.NEEDS_REVIEW
+            and item.qa_score >= 60
+        )
+    }
+    for run in artifact.task_runs:
+        if run.evidence and not any(
+            item.evidence_id in recommended for item in run.evidence
+        ):
+            recommended.add(
+                max(run.evidence, key=lambda item: item.qa_score).evidence_id
+            )
+    return recommended
 
 
 def _to_lines(values: list[str]) -> str:
@@ -768,15 +797,7 @@ def _render_gate_one(project: ProjectState, advanced: bool) -> None:
         "打开来源核对原文，并决定证据是否可以进入分析。快速模式给出系统推荐；最终采用决定必须由用户确认。"
     )
     source_map = {source.source_id: source for source in artifact.sources}
-    recommended_ids = {
-        item.evidence_id
-        for item in artifact.evidence
-        if item.review_status == EvidenceReviewStatus.ACCEPTED
-        or (
-            item.review_status == EvidenceReviewStatus.NEEDS_REVIEW
-            and item.qa_score >= 60
-        )
-    }
+    recommended_ids = _recommended_evidence_ids(artifact)
     selection_key = f"studio_gate_one_selection_{artifact.artifact_id}"
     version_key = f"studio_gate_one_editor_version_{artifact.artifact_id}"
     if selection_key not in st.session_state:
@@ -803,7 +824,8 @@ def _render_gate_one(project: ProjectState, advanced: bool) -> None:
         st.warning("当前检索没有形成可审阅证据。请在本页重新检索相关任务。")
     else:
         st.caption(
-            f"共{len(rows)}条证据 · 系统推荐{len(recommended_ids)}条 · "
+            f"共{len(rows)}条证据 · 系统推荐{len(recommended_ids)}条"
+            "（优先QA≥60，并保证每项任务至少一条最高分候选） · "
             "可先批量选择，再重点检查低等级、冲突和高风险证据。"
         )
         bulk_a, bulk_b, bulk_c = st.columns(3)

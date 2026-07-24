@@ -27,6 +27,78 @@ from src.models.research import (
 )
 from src.state.project import ProjectState
 from src.state.session import ACTIVE_PAGE_KEY, PROJECT_KEY
+from src.ui.pages.research_studio import _recommended_evidence_ids
+
+
+def test_gate_one_recommendations_cover_each_research_task() -> None:
+    source_a = EvidenceSource(
+        task_id="T01",
+        discovery_query="query-a",
+        title="Source A",
+        url="https://example.com/a",
+        domain="example.com",
+        source_tier=SourceTier.B,
+        tier_reason="industry source",
+        transport="rest",
+    )
+    source_b = EvidenceSource(
+        task_id="T02",
+        discovery_query="query-b",
+        title="Source B",
+        url="https://example.com/b",
+        domain="example.com",
+        source_tier=SourceTier.C,
+        tier_reason="secondary source",
+        transport="rest",
+    )
+    high_qa = EvidenceItem(
+        task_id="T01",
+        source_id=source_a.source_id,
+        kind=EvidenceKind.FACT,
+        statement="高质量候选证据",
+        supporting_excerpt="高质量候选证据",
+        geographic_scope="中国",
+        market_scope="测试行业",
+        supports_or_challenges="supports",
+        model_confidence=0.8,
+        qa_score=80,
+    )
+    low_qa = EvidenceItem(
+        task_id="T02",
+        source_id=source_b.source_id,
+        kind=EvidenceKind.FACT,
+        statement="唯一但需要重点核查的候选证据",
+        supporting_excerpt="唯一但需要重点核查的候选证据",
+        geographic_scope="中国",
+        market_scope="测试行业",
+        supports_or_challenges="supports",
+        model_confidence=0.5,
+        qa_score=45,
+    )
+    artifact = EvidenceCollectionArtifact(
+        research_plan_id="plan",
+        task_runs=[
+            TaskEvidenceRun(
+                task_id="T01",
+                task_title="Task A",
+                queries_used=["query-a"],
+                sources=[source_a],
+                evidence=[high_qa],
+            ),
+            TaskEvidenceRun(
+                task_id="T02",
+                task_title="Task B",
+                queries_used=["query-b"],
+                sources=[source_b],
+                evidence=[low_qa],
+            ),
+        ],
+    )
+
+    assert _recommended_evidence_ids(artifact) == {
+        high_qa.evidence_id,
+        low_qa.evidence_id,
+    }
 
 
 def test_industry_analysis_workspace_renders_from_session_artifacts() -> None:
