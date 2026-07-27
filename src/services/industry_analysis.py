@@ -164,7 +164,13 @@ class IndustryAnalysisService:
                     "enabling_condition/mixed/conditional）、impact_direction和因果机制。用户说"
                     "发展条件、关键变量、促进条件或挑战时，应根据其机制分类，不可依靠关键词。"
                     "market_value_chain应说明value_chain_position。没有目标企业时company_implications"
-                    "必须为空数组。\n\n"
+                    "必须为空数组。market_value_chain必须同时区分行业赛道分类与上中下游价值链，"
+                    "识别交叉或易混概念，并分析附加价值、利润、风险和壁垒；market_status必须在"
+                    "证据允许时呈现二手资料口径并交叉解释Top-down、Bottom-up或枚举法市场规模，"
+                    "无法测算时明确列出缺失的数据、公式或假设；competitive_landscape必须坚持"
+                    "同一年、同一地区、相同细分业务和相同指标，禁止用集团总收入替代目标业务；"
+                    "drivers_constraints目标为4项驱动与4项制约，每项说明完整因果链、结构性/周期性/"
+                    "一次性类型和可监测指标，证据不足的项目只能写入evidence_gaps。\n\n"
                     f"已接受证据：\n{json.dumps(evidence_payload, ensure_ascii=False)}\n\n"
                     f"严格输出结构：\n{json.dumps(ANALYSIS_CONTRACT, ensure_ascii=False)}"
                 ),
@@ -244,6 +250,10 @@ class IndustryAnalysisService:
             compliance_checks=[
                 "仅引用已接受Evidence ID",
                 "事实、观点、推断和商业判断已分层",
+                "行业赛道与产业链已区分",
+                "市场规模方法、数据输入和缺口可追溯",
+                "竞争格局使用同年同地区同业务同指标口径",
+                "驱动与制约目标及因果链符合SOP",
                 "竞争关系包含可解释的比较依据",
                 "当前行业分析与未来趋势预测已分离",
             ],

@@ -195,10 +195,11 @@ def test_analysis_only_sends_human_accepted_evidence() -> None:
     assert rejected_id not in model.last_messages[-1].content
     assert len(analysis.modules) == 5
     assert set(analysis.methodology.rule_ids) >= {
-        "ANALYSIS-001",
-        "ANALYSIS-002",
-        "ANALYSIS-003",
-        "ANALYSIS-004",
+        "SUL-DEFINE-001",
+        "SUL-CHAIN-002",
+        "SUL-COMP-001",
+        "SUL-DRIVER-003",
+        "SUL-GOV-001",
     }
 
 

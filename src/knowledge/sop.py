@@ -14,7 +14,7 @@ DEFAULT_SOP_PATH = (
     Path(__file__).resolve().parents[2]
     / "knowledge_packs"
     / "research_sop"
-    / "generic_baseline_v1.json"
+    / "sullivan_industry_research_v1.json"
 )
 
 
@@ -34,6 +34,10 @@ class SOPConstraints(BaseModel):
     min_human_review_gates: int = 2
     require_inclusions_and_exclusions: bool = True
     require_counter_evidence: bool = True
+    required_research_modules: list[str] = Field(default_factory=list)
+    driver_factor_target: int = 4
+    constraint_factor_target: int = 4
+    source_tier_count: int = 4
 
 
 class ResearchSOPPack(BaseModel):
@@ -82,4 +86,3 @@ def load_active_sop() -> ResearchSOPPack:
     configured = os.getenv("RESEARCH_SOP_PACK_PATH")
     path = Path(configured).expanduser() if configured else DEFAULT_SOP_PATH
     return load_sop_pack(path)
-

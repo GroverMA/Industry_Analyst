@@ -43,6 +43,11 @@ from src.services.enterprise_sensing import (
 )
 from src.services.company_assessment import company_scorecard_eligibility
 from src.services.report_generation import ReportGenerationError
+from src.services.report_export import (
+    build_report_docx,
+    build_report_pdf,
+    project_report_context,
+)
 from src.services.research_planning import SOPComplianceError
 from src.state.project import ProjectState, WorkflowStatus, WorkspaceMode
 from src.state.session import ACTIVE_PAGE_KEY, set_project
@@ -1146,21 +1151,31 @@ def _render_report(project: ProjectState) -> None:
     with st.expander("预览完整报告", expanded=True):
         st.markdown(report.markdown)
     safe_name = "-".join(project.project_name.split()) or "industry-report"
+    export_context = project_report_context(
+        project,
+        title=report.title,
+        markdown=report.markdown,
+        report_status="经人工审核的通用行业研究报告",
+        generated_at=report.generated_at,
+    )
+    word_report = build_report_docx(export_context)
+    pdf_report = build_report_pdf(export_context)
     col_a, col_b = st.columns(2)
     col_a.download_button(
-        "下载 Markdown 报告",
-        data=report.markdown.encode("utf-8"),
-        file_name=f"{safe_name}.md",
-        mime="text/markdown",
+        "下载 Word 报告",
+        data=word_report,
+        file_name=f"{safe_name}.docx",
+        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         width="stretch",
         type="primary",
     )
     col_b.download_button(
-        "下载报告 JSON",
-        data=report.model_dump_json(indent=2).encode("utf-8"),
-        file_name=f"{safe_name}.report.json",
-        mime="application/json",
+        "下载 PDF 报告",
+        data=pdf_report,
+        file_name=f"{safe_name}.pdf",
+        mime="application/pdf",
         width="stretch",
+        type="primary",
     )
     if project.company_strategy_enabled:
         st.markdown("### 继续企业战略分析")

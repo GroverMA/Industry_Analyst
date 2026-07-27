@@ -1,0 +1,158 @@
+{
+  "sop_id": "sullivan_industry_research",
+  "display_name": "沙利文行业研究 SOP",
+  "version": "1.0.0",
+  "pack_type": "methodology",
+  "locked": true,
+  "description": "所有快速研究、高级工作台和行业案例共同使用的第一版研究方法底座。后续更新必须发布新版本，不得静默覆盖既有项目的方法追溯。",
+  "rules": [
+    {
+      "rule_id": "SUL-BRIEF-001",
+      "title": "研究目标与决策语境先行",
+      "instruction": "先明确用户最需要回答的行业问题。业务决策可以为空；没有企业战略输入时保持行业层研究，不得虚构公司决策。",
+      "applies_to": ["brief", "plan"]
+    },
+    {
+      "rule_id": "SUL-DEFINE-001",
+      "title": "完整行业定义",
+      "instruction": "行业定义必须说明产品或服务组成、服务对象、作用、分类方法、行业特点、核心竞争点、地区差异、未来技术或商业模式转变，并明确包含项与排除项。",
+      "applies_to": ["brief", "plan", "analysis"]
+    },
+    {
+      "rule_id": "SUL-TRACK-001",
+      "title": "行业赛道定位",
+      "instruction": "明确目标行业所属的上位行业、并列细分和下位细分，识别因产业协同、业务拓展或技术平台化形成的跨赛道经营。行业赛道分类与产业链不得混为一谈。",
+      "applies_to": ["brief", "plan", "analysis"]
+    },
+    {
+      "rule_id": "SUL-TRACK-002",
+      "title": "易混和交叉概念注解",
+      "instruction": "主动识别相似、重叠或使用不同分类维度的概念，解释判断标准、交集和非交集；不能强行把交叉概念处理成简单并列或上下级关系。",
+      "applies_to": ["brief", "plan", "analysis"]
+    },
+    {
+      "rule_id": "SUL-CHAIN-001",
+      "title": "产业链主要环节",
+      "instruction": "识别上游原材料、技术和基础设施，中游生产、集成和服务，下游客户与应用，并区分集成商、运营商等职责不同的参与者。",
+      "applies_to": ["plan", "analysis"]
+    },
+    {
+      "rule_id": "SUL-CHAIN-002",
+      "title": "价值流与壁垒",
+      "instruction": "产业链分析不止列参与者，还应研究各环节附加价值、利润或毛利水平、资本投入、风险、进入壁垒及价值实现位置；证据不足时明确列出缺口。",
+      "applies_to": ["plan", "analysis"]
+    },
+    {
+      "rule_id": "SUL-SIZE-001",
+      "title": "市场规模二手资料底稿",
+      "instruction": "广泛搜集市场规模和增长资料，逐项记录来源链接、来源等级、行业定义、地区、年份、统计口径、单位和覆盖范围。重大数字不得仅依赖单一来源。",
+      "applies_to": ["plan", "analysis"]
+    },
+    {
+      "rule_id": "SUL-SIZE-002",
+      "title": "四级来源使用规则",
+      "instruction": "Tier 1政府监管和官方统计优先；Tier 2协会、专业数据库和公开方法研究机构可作主要依据；Tier 3公司披露、券商和咨询报告用于补充并追溯原始来源；Tier 4媒体、新闻稿、博客、搜索摘要和AI内容只能发现线索，不能单独支持市场规模结论。",
+      "applies_to": ["plan", "analysis", "future"]
+    },
+    {
+      "rule_id": "SUL-SIZE-003",
+      "title": "多方法市场规模测算",
+      "instruction": "同时设计自上而下和自下而上的市场规模测算；对象可穷尽时增加枚举法。对不同结果进行交叉验证和差异解释，输出历史值、预测值、增长率、公式、数据输入和假设。",
+      "applies_to": ["plan", "analysis", "future"]
+    },
+    {
+      "rule_id": "SUL-COMP-001",
+      "title": "同口径竞争比较",
+      "instruction": "竞争格局必须比较同一年、同一地区、相同细分业务和相同指标的表现。不得以公司总收入代替目标业务收入，也不得混用产量、出货量、销售额和装机量。",
+      "applies_to": ["plan", "analysis"]
+    },
+    {
+      "rule_id": "SUL-COMP-002",
+      "title": "排名与业务亮点",
+      "instruction": "视数据可得性列出行业Top 5或Top 10、市场份额和集中度，并标注各主体业务亮点、比较口径、数据缺口和估算方法。可比公司不自动等于直接竞争者。",
+      "applies_to": ["plan", "analysis"]
+    },
+    {
+      "rule_id": "SUL-DRIVER-001",
+      "title": "先定义行业发展结果",
+      "instruction": "分析驱动因素前先说明过去5至10年行业具体发生了什么变化，区分市场规模、销量、渗透率、价格成本、利润和价值分配，不能把规模增长等同于盈利改善。",
+      "applies_to": ["plan", "analysis", "future"]
+    },
+    {
+      "rule_id": "SUL-DRIVER-002",
+      "title": "六方向寻找因素",
+      "instruction": "从下游需求、下游应用拓展、技术与产品进步、政策与基础设施、供给与成本、商业模式与渠道六个方向寻找候选驱动与制约因素。",
+      "applies_to": ["plan", "analysis", "future"]
+    },
+    {
+      "rule_id": "SUL-DRIVER-003",
+      "title": "完整因果链和类型",
+      "instruction": "每项因素必须说明因素、传导机制、直接影响变量、行业结果和验证指标，并区分结构性、周期性和一次性影响。目标输出为4项驱动与4项制约；证据不足时不得编造，应明确缺失项。",
+      "applies_to": ["analysis", "future"]
+    },
+    {
+      "rule_id": "SUL-EVIDENCE-001",
+      "title": "事实观点推断预测分离",
+      "instruction": "区分事实、数据、来源观点、分析师推断和预测。所有重要结论必须连接已核验证据，来源冲突、口径冲突和无法回答的问题必须保留。",
+      "applies_to": ["plan", "analysis", "future"]
+    },
+    {
+      "rule_id": "SUL-EVIDENCE-002",
+      "title": "反证与失效条件",
+      "instruction": "每项关键假设、行业判断和趋势都要主动寻找反证、替代解释、边界条件和可能使结论失效的指标。",
+      "applies_to": ["plan", "analysis", "future"]
+    },
+    {
+      "rule_id": "SUL-FUTURE-001",
+      "title": "未来趋势来自可追溯机制",
+      "instruction": "趋势预测必须来自已观察变化、历史机制、玩家布局、技术成本、客户需求、政策支付和领先指标，说明发生时间、竞争格局、商业模式和客户需求影响，不得用模型常识填补证据。",
+      "applies_to": ["plan", "future"]
+    },
+    {
+      "rule_id": "SUL-FUTURE-002",
+      "title": "情景和可证伪预测",
+      "instruction": "至少形成基准、加速和受阻情景，明确触发条件、结果、领先指标和失效条件。没有经过验证的数据和统计模型时禁止伪精确概率或市场数字。",
+      "applies_to": ["future"]
+    },
+    {
+      "rule_id": "SUL-STRATEGY-001",
+      "title": "行业层战略含义",
+      "instruction": "所有研究均应说明细分机会、客户变化、竞争重心、技术或商业模式机会与风险；没有企业输入时只能形成行业层Where to Play选项和How to Win原则。",
+      "applies_to": ["analysis", "future", "company_assessment"]
+    },
+    {
+      "rule_id": "SUL-STRATEGY-002",
+      "title": "企业战略输出有条件生成",
+      "instruction": "只有企业战略目标和经审核的一手企业资料存在时，才能生成公司Where to Play、How to Win、市场策略、销售计划、Company Scorecard和Action Plan，并必须回扣企业战略意图。",
+      "applies_to": ["company_assessment", "action_plan"]
+    },
+    {
+      "rule_id": "SUL-GOV-001",
+      "title": "统一方法和人工审核",
+      "instruction": "快速模式与高级工作台必须使用同一SOP、同一Research Brief、Research Plan、Evidence Matrix和分析Artifacts；模式只能改变交互深度，不能降低研究步骤或质量标准。",
+      "applies_to": ["all"]
+    }
+  ],
+  "constraints": {
+    "min_key_questions": 5,
+    "max_key_questions": 12,
+    "min_hypotheses": 3,
+    "min_tasks": 6,
+    "max_tasks": 10,
+    "min_human_review_gates": 3,
+    "require_inclusions_and_exclusions": true,
+    "require_counter_evidence": true,
+    "required_research_modules": [
+      "industry_definition",
+      "industry_track",
+      "value_chain",
+      "market_sizing",
+      "competitive_landscape",
+      "drivers_constraints",
+      "future_intelligence"
+    ],
+    "driver_factor_target": 4,
+    "constraint_factor_target": 4,
+    "source_tier_count": 4
+  }
+}

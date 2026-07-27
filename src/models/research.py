@@ -103,6 +103,7 @@ class ResearchPlanArtifact(BaseModel):
     tasks: list[ResearchTask] = Field(min_length=1)
     human_review_gates: list[str] = Field(min_length=1)
     unresolved_gaps: list[str] = Field(default_factory=list)
+    sop_coverage: dict[str, list[str]] = Field(default_factory=dict)
     methodology: MethodologyTrace
     generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     human_confirmed: bool = False

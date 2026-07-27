@@ -272,11 +272,12 @@ def test_future_confidence_is_computed_by_system() -> None:
     assert future.trends[0].confidence.evidence_quality == 90
     assert future.trends[0].confidence.enterprise_signal_support is None
     assert set(future.methodology.rule_ids) >= {
-        "FUTURE-001",
-        "FUTURE-002",
-        "FUTURE-003",
-        "FUTURE-004",
-        "FUTURE-005",
+        "SUL-SIZE-003",
+        "SUL-DRIVER-003",
+        "SUL-EVIDENCE-002",
+        "SUL-FUTURE-001",
+        "SUL-FUTURE-002",
+        "SUL-GOV-001",
     }
 
 

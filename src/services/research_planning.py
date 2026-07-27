@@ -82,6 +82,15 @@ PLAN_OUTPUT_CONTRACT = {
     ],
     "human_review_gates": ["string"],
     "unresolved_gaps": ["string"],
+    "sop_coverage": {
+        "industry_definition": ["T01"],
+        "industry_track": ["T01"],
+        "value_chain": ["T02"],
+        "market_sizing": ["T03"],
+        "competitive_landscape": ["T04"],
+        "drivers_constraints": ["T05"],
+        "future_intelligence": ["T06"],
+    },
 }
 
 
@@ -158,7 +167,9 @@ class ResearchPlanningService:
                 content=(
                     "为以下研究项目生成Research Plan。每项任务必须主动寻找反证，并明确"
                     "证据标准与校验关卡。搜索词应可直接用于后续网页搜索。tasks中定义的"
-                    "每个字段都必须存在且非空，depends_on可以为空数组。\n\n"
+                    "每个字段都必须存在且非空，depends_on可以为空数组。所有研究模式都必须"
+                    "完整覆盖当前SOP；sop_coverage必须把每个必需研究模块映射到一个或多个真实"
+                    "task_id，不能因为用户选择快速模式而省略。\n\n"
                     f"项目输入：\n{json.dumps(self._project_payload(project), ensure_ascii=False)}\n\n"
                     "已确认Research Brief：\n"
                     f"{brief.model_dump_json(exclude={'methodology', 'generated_at'}, ensure_ascii=False)}\n\n"
@@ -247,6 +258,20 @@ class ResearchPlanningService:
             required = ("preferred_sources", "search_queries", "evidence_standard", "validation_gate")
             if any(not task.get(field) for field in required):
                 raise SOPComplianceError("研究任务缺少来源、搜索、证据或校验要求")
+        coverage = payload.get("sop_coverage")
+        required_modules = set(constraints.required_research_modules)
+        if required_modules:
+            if not isinstance(coverage, dict) or not required_modules.issubset(coverage):
+                raise SOPComplianceError("研究计划未完整覆盖当前SOP必需模块")
+            valid_task_ids = set(task_ids)
+            for module_id in required_modules:
+                mapped = coverage.get(module_id)
+                if (
+                    not isinstance(mapped, list)
+                    or not mapped
+                    or not set(mapped).issubset(valid_task_ids)
+                ):
+                    raise SOPComplianceError(f"SOP模块{module_id}未映射到有效研究任务")
 
     @staticmethod
     def _unwrap(payload: dict[str, Any], key: str) -> dict[str, Any]:

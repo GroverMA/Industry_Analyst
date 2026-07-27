@@ -53,7 +53,7 @@ def brief_payload() -> dict[str, Any]:
 
 def plan_payload() -> dict[str, Any]:
     tasks = []
-    for index in range(1, 6):
+    for index in range(1, 7):
         tasks.append(
             {
                 "task_id": f"T{index:02d}",
@@ -72,10 +72,23 @@ def plan_payload() -> dict[str, Any]:
             }
         )
     return {
-        "plan_summary": "Five-stage evidence-first plan.",
+        "plan_summary": "Sullivan SOP-governed evidence-first plan.",
         "tasks": tasks,
-        "human_review_gates": ["Confirm scope", "Approve evidence plan"],
+        "human_review_gates": [
+            "Confirm scope",
+            "Approve evidence",
+            "Approve report content",
+        ],
         "unresolved_gaps": ["Market-share definition"],
+        "sop_coverage": {
+            "industry_definition": ["T01"],
+            "industry_track": ["T01"],
+            "value_chain": ["T02"],
+            "market_sizing": ["T03"],
+            "competitive_landscape": ["T04"],
+            "drivers_constraints": ["T05"],
+            "future_intelligence": ["T06"],
+        },
     }
 
 
@@ -99,8 +112,10 @@ def test_active_sop_is_locked_and_fingerprinted() -> None:
 
     assert sop.locked is True
     assert sop.content_hash
-    assert "BRIEF-001" in sop.rule_ids
-    assert "PLAN-003" in sop.rule_ids
+    assert sop.sop_id == "sullivan_industry_research"
+    assert sop.version == "1.0.0"
+    assert "SUL-DEFINE-001" in sop.rule_ids
+    assert "SUL-SIZE-003" in sop.rule_ids
 
 
 def test_service_generates_traceable_brief_and_plan() -> None:
@@ -114,8 +129,9 @@ def test_service_generates_traceable_brief_and_plan() -> None:
     assert brief.methodology.locked is True
     assert brief.methodology.sop_hash
     assert len(brief.key_questions) == 5
-    assert len(plan.tasks) == 5
+    assert len(plan.tasks) == 6
     assert all(task.counter_evidence_required for task in plan.tasks)
+    assert set(plan.sop_coverage) == set(load_active_sop().constraints.required_research_modules)
     assert plan.methodology.sop_id == brief.methodology.sop_id
     assert "当前研究方法包处于锁定状态" in fake.messages[0][0].content
 
@@ -141,7 +157,7 @@ def test_service_repairs_a_noncompliant_plan_once() -> None:
     brief = brief.model_copy(update={"human_confirmed": True})
     plan = service.generate_plan(project(), brief)
 
-    assert len(plan.tasks) == 5
+    assert len(plan.tasks) == 6
     assert len(fake.messages) == 3
     assert "违规原因" in fake.messages[-1][-1].content
 
@@ -152,4 +168,15 @@ def test_plan_requires_gate_zero_confirmation() -> None:
     brief = service.generate_brief(project())
 
     with pytest.raises(SOPComplianceError, match="Gate 0"):
+        service.generate_plan(project(), brief)
+
+
+def test_service_rejects_plan_without_full_sop_coverage() -> None:
+    invalid = plan_payload()
+    invalid["sop_coverage"].pop("market_sizing")
+    fake = FakeStructuredModel([brief_payload(), invalid, invalid])
+    service = ResearchPlanningService(fake, load_active_sop())
+
+    with pytest.raises(SOPComplianceError, match="完整覆盖"):
+        brief = service.generate_brief(project()).model_copy(update={"human_confirmed": True})
         service.generate_plan(project(), brief)

@@ -84,6 +84,32 @@ def apply_theme() -> None:
         .stFormSubmitButton > button[kind^="primary"] * {{
             color: #FFFFFF !important;
         }}
+        .stDownloadButton > button {{
+            min-height: 2.6rem;
+            border-radius: {RADIUS['small']};
+            border: 1px solid var(--ia-accent) !important;
+            background: var(--ia-accent) !important;
+            color: #FFFFFF !important;
+            font-weight: 650;
+            box-shadow: none;
+        }}
+        .stDownloadButton > button *,
+        .stDownloadButton > button p,
+        .stDownloadButton > button span {{
+            color: #FFFFFF !important;
+        }}
+        .stDownloadButton > button:hover,
+        .stDownloadButton > button:focus,
+        .stDownloadButton > button:active {{
+            background: {COLORS['accent']} !important;
+            border-color: {COLORS['accent']} !important;
+            color: #FFFFFF !important;
+        }}
+        .stDownloadButton > button:hover *,
+        .stDownloadButton > button:focus *,
+        .stDownloadButton > button:active * {{
+            color: #FFFFFF !important;
+        }}
         .stButton > button[kind^="primary"]:disabled,
         .stFormSubmitButton > button[kind^="primary"]:disabled {{
             background: #6B929B;

@@ -6,6 +6,11 @@ from datetime import UTC, datetime
 
 import streamlit as st
 
+from src.services.report_export import (
+    build_report_docx,
+    build_report_pdf,
+    project_report_context,
+)
 from src.services.strategy_report import (
     StrategyReportError,
     enterprise_report_gate_reasons,
@@ -47,21 +52,29 @@ def render(project: ProjectState | None) -> None:
     with st.expander("预览通用行业报告", expanded=not project.company_strategy_enabled):
         st.markdown(general.markdown)
     safe_name = _safe_name(project.project_name)
+    general_context = project_report_context(
+        project,
+        title=general.title,
+        markdown=general.markdown,
+        report_status="经人工审核的通用行业研究报告",
+        generated_at=general.generated_at,
+    )
     col_a, col_b = st.columns(2)
     col_a.download_button(
-        "下载通用报告 Markdown",
-        data=general.markdown.encode("utf-8"),
-        file_name=f"{safe_name}.md",
-        mime="text/markdown",
+        "下载通用报告 Word",
+        data=build_report_docx(general_context),
+        file_name=f"{safe_name}.docx",
+        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         width="stretch",
-        type="primary" if not project.company_strategy_enabled else "secondary",
+        type="primary",
     )
     col_b.download_button(
-        "下载通用报告 JSON",
-        data=general.model_dump_json(indent=2).encode("utf-8"),
-        file_name=f"{safe_name}.report.json",
-        mime="application/json",
+        "下载通用报告 PDF",
+        data=build_report_pdf(general_context),
+        file_name=f"{safe_name}.pdf",
+        mime="application/pdf",
         width="stretch",
+        type="primary",
     )
 
     if not project.company_strategy_enabled:
@@ -120,19 +133,27 @@ def render(project: ProjectState | None) -> None:
     st.success("企业决策报告已生成：行业底稿、公司评分和行动建议均保留追溯ID与人工审核记录。")
     with st.expander("预览企业决策报告", expanded=True):
         st.markdown(enterprise_report.markdown)
+    enterprise_context = project_report_context(
+        project,
+        title=enterprise_report.title,
+        markdown=enterprise_report.markdown,
+        report_status="经人工审核的企业战略决策报告",
+        generated_at=enterprise_report.generated_at,
+    )
     col_c, col_d = st.columns(2)
     col_c.download_button(
-        "下载企业决策报告 Markdown",
-        data=enterprise_report.markdown.encode("utf-8"),
-        file_name=f"{safe_name}.enterprise-decision.md",
-        mime="text/markdown",
+        "下载企业决策报告 Word",
+        data=build_report_docx(enterprise_context),
+        file_name=f"{safe_name}.enterprise-decision.docx",
+        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         width="stretch",
         type="primary",
     )
     col_d.download_button(
-        "下载企业决策报告 JSON",
-        data=enterprise_report.model_dump_json(indent=2).encode("utf-8"),
-        file_name=f"{safe_name}.enterprise-decision.json",
-        mime="application/json",
+        "下载企业决策报告 PDF",
+        data=build_report_pdf(enterprise_context),
+        file_name=f"{safe_name}.enterprise-decision.pdf",
+        mime="application/pdf",
         width="stretch",
+        type="primary",
     )
