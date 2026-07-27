@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import importlib
+import inspect
+
 import streamlit as st
 
 from pydantic import ValidationError
@@ -22,7 +25,7 @@ from src.state.session import (
     set_project,
 )
 from src.ui.components import render_project_strip
-from src.ui.navigation import render_sidebar
+import src.ui.navigation as navigation
 from src.ui.pages import PAGE_RENDERERS
 from src.ui.theme import apply_theme
 
@@ -64,7 +67,16 @@ if history_response:
         st.rerun()
 
 project = get_project(st.session_state)
-active_page = render_sidebar(
+
+# Streamlit Community Cloud can hot-reload ``app.py`` while retaining an older
+# imported module in the running process.  The history release changed the
+# sidebar contract from one argument to two, so refresh that module only when a
+# stale one-argument implementation is still cached.  A normal cold start never
+# enters this branch.
+if len(inspect.signature(navigation.render_sidebar).parameters) < 2:
+    navigation = importlib.reload(navigation)
+
+active_page = navigation.render_sidebar(
     project,
     st.session_state.get(HISTORY_CATALOG_KEY, {"projects": [], "folders": []}),
 )
