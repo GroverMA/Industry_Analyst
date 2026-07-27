@@ -41,6 +41,10 @@ SAMPLE_MARKDOWN = """# 中国分子诊断行业研究报告
 - 加速情景：创新检测获得支付支持
 - 受阻情景：价格和合规压力抑制商业化
 
+#### 基准情景
+
+在基准情景下，临床需求、支付能力与商业化效率需要同步观察。
+
 | 维度 | 判断 | 证据状态 |
 |---|---|---|
 | 临床需求 | 稳步扩展 | 已审核 |
@@ -70,6 +74,7 @@ def test_word_export_is_editable_and_contains_report_content() -> None:
     assert "中国分子诊断行业研究报告" in text
     assert "沙利文行业研究 SOP v1.0.0" in text
     assert "市场现状与竞争格局" in text
+    assert "####" not in text
     assert len(document.tables) == 1
     assert document.tables[0].cell(1, 0).text == "临床需求"
     hyperlink_targets = [

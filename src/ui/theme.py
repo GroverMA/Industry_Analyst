@@ -167,6 +167,31 @@ def apply_theme() -> None:
         }}
         .ia-sidebar-project strong {{ color: var(--ia-text); font-size: .83rem; }}
         .ia-sidebar-project span {{ color: var(--ia-muted); font-size: .72rem; }}
+        .ia-project-meta {{
+            color: var(--ia-accent); font-size: .72rem; font-weight: 650;
+            margin-top: .5rem;
+        }}
+        .ia-sidebar-section {{
+            color: var(--ia-text); font-size: .72rem; font-weight: 740;
+            letter-spacing: .035em; margin: 1.2rem 0 .45rem;
+        }}
+        [data-testid="stSidebar"] .stButton > button:not([kind^="primary"]) {{
+            justify-content: flex-start;
+            border-color: transparent;
+            background: transparent;
+            min-height: 2.2rem;
+            padding-left: .55rem;
+            font-weight: 560;
+        }}
+        [data-testid="stSidebar"] .stButton > button:not([kind^="primary"]):hover {{
+            border-color: var(--ia-border);
+            background: var(--ia-accent-soft);
+        }}
+        [data-testid="stSidebar"] [data-testid="stCaptionContainer"] {{
+            font-size: .68rem;
+            margin-top: -.45rem;
+            padding-left: .55rem;
+        }}
         .ia-prompt-guide {{
             border: 1px solid #CFE0E3;
             border-left: 4px solid var(--ia-accent);
@@ -208,6 +233,7 @@ def apply_theme() -> None:
         #MainMenu, footer {{ visibility: hidden; }}
         @media (max-width: 760px) {{
             [data-testid="stAppViewContainer"] > .main .block-container {{ padding-top: 1rem; }}
+            [data-testid="stSidebar"] {{ background: #FFFFFF; }}
             .ia-pipeline-grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
             .ia-hero {{ padding: 1.5rem; }}
             .ia-pipeline-step {{ min-height: 58px; padding: .45rem; }}

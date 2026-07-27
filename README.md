@@ -22,7 +22,7 @@ The first high-confidence case demonstration covers the China molecular diagnost
 4. Pass Gate 1: the user confirms source authenticity and evidence usability.
 5. Analyze industry structure, competitors, drivers, commercial logic, trends, and scenarios.
 6. Pass Gate 2: the user confirms which findings and forecasts enter the report.
-7. Preview and download the human-reviewed General Report as Markdown or JSON.
+7. Preview and download the human-reviewed General Report as editable Word or paginated PDF.
 8. Optionally add enterprise sensing, assess company fit, and develop an Action Plan.
 
 ## Case demonstration
@@ -85,13 +85,19 @@ The default Research Studio first calls the model to interpret the original
 Prompt, pauses for editable market-scope alignment, runs public web research,
 supports batch Evidence review, generates current analysis and future
 intelligence, pauses for report-content review, checks every must-answer
-question, and then produces a downloadable Markdown and JSON report. Analyst
+question, and then produces a downloadable Word and PDF report. The final
+writing pass converts approved facts, judgments, trends, and scenarios into
+formal, complete analytical paragraphs without adding unsupported claims.
+Analyst
 Workspace embeds enterprise strategy and first-party sensing status without
 forking the public research workflow.
 
-Users can download a complete project snapshot and restore it later. This is an
-MVP recovery mechanism; durable cross-device history still requires a later
-authenticated cloud database.
+The sidebar keeps full browser-local project snapshots in IndexedDB. It separates
+in-progress and completed studies, shows each project's progress and current
+research node, restores the exact workflow state, supports project search, and
+lets users create folders and move projects between them. This lightweight MVP
+persists after refresh on the same browser and device; authenticated cross-device
+history remains a later cloud-database extension.
 
 Stage 7A remains the enterprise strategy eligibility foundation.
 

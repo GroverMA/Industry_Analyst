@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import json
-
 import streamlit as st
-from pydantic import ValidationError
 
 from src.state.golden_case import load_golden_case
 from src.state.project import ProjectState, ResearchMode, WorkflowStatus
@@ -182,22 +179,3 @@ def render(project: ProjectState | None) -> None:
         information_card("Research Discipline", "任务、证据、反证与审核节点可见。", value="10 Gates")
     with cols[2]:
         information_card("Decision Output", "行业判断最终映射至公司与行动。", value="Action Ready")
-
-    st.subheader("恢复已有研究项目")
-    st.caption("上传此前下载的 `.industry-project.json` 快照，可恢复研究任务、证据、审核结果和报告。")
-    with st.form("restore_project_snapshot", border=True):
-        snapshot = st.file_uploader("项目快照", type=["json"])
-        restore = st.form_submit_button("恢复项目", width="stretch")
-        if restore:
-            if snapshot is None:
-                st.error("请先选择项目快照文件。")
-            else:
-                try:
-                    payload = json.loads(snapshot.getvalue().decode("utf-8"))
-                    restored = ProjectState.model_validate(payload)
-                except (UnicodeDecodeError, json.JSONDecodeError, ValidationError) as exc:
-                    st.error(f"项目快照无法恢复：{exc}")
-                else:
-                    set_project(st.session_state, restored)
-                    st.session_state[ACTIVE_PAGE_KEY] = "research_studio"
-                    st.rerun()

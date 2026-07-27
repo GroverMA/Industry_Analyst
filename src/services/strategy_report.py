@@ -23,7 +23,7 @@ def enterprise_report_gate_reasons(project: ProjectState) -> list[str]:
     return reasons
 
 
-def generate_enterprise_decision_report(project: ProjectState) -> EnterpriseDecisionReportArtifact:
+def _generate_enterprise_decision_report_legacy(project: ProjectState) -> EnterpriseDecisionReportArtifact:
     reasons = enterprise_report_gate_reasons(project)
     if reasons:
         raise StrategyReportError("；".join(reasons))
@@ -127,6 +127,169 @@ def generate_enterprise_decision_report(project: ProjectState) -> EnterpriseDeci
             "---",
             "",
             "# Appendix · General Industry Research",
+            "",
+            general.markdown,
+        ]
+    )
+    return EnterpriseDecisionReportArtifact(
+        title=f"{project.project_name} · 企业决策版",
+        general_report_id=general.report_id,
+        scorecard_id=scorecard.artifact_id,
+        action_plan_id=action_plan.artifact_id,
+        markdown="\n".join(lines),
+    )
+
+
+def _sentence(value) -> str:
+    text = " ".join(str(value or "").split()).strip()
+    for symbol in ("➡", "➜", "→", "←", "👉", "👈"):
+        text = text.replace(symbol, "")
+    if text and text[-1] not in "。！？；.!?;":
+        text += "。"
+    return text
+
+
+def _paragraph(*parts) -> str:
+    return "".join(_sentence(part) for part in parts if str(part or "").strip())
+
+
+def generate_enterprise_decision_report(project: ProjectState) -> EnterpriseDecisionReportArtifact:
+    """Compose the approved strategy layer as formal management-report prose."""
+
+    reasons = enterprise_report_gate_reasons(project)
+    if reasons:
+        raise StrategyReportError("；".join(reasons))
+    general = project.general_report_artifact
+    scorecard = project.company_scorecard_artifact
+    action_plan = project.action_plan_artifact
+    assert general and scorecard and action_plan
+
+    accepted_dimensions = [
+        item for item in scorecard.dimensions
+        if item.review_status == StrategyReviewStatus.ACCEPTED
+    ]
+    accepted_actions = [
+        item for item in action_plan.actions
+        if item.review_status == StrategyReviewStatus.ACCEPTED
+    ]
+    weighted_score = (
+        f"{scorecard.weighted_score:.1f}分"
+        if scorecard.weighted_score is not None
+        else "因证据覆盖不足暂未计算"
+    )
+    lines = [
+        f"# {project.project_name} · 企业决策版",
+        "",
+        (
+            "本报告在经人工确认的通用行业研究基础上，结合目标企业战略意图、经确认的一手资料、"
+            "公司评分及行动计划形成。行业结论、公司判断及建议均保留追溯记录，并受所列证据边界"
+            "及停止条件约束。"
+        ),
+        "",
+        "## A. 管理层决策框架",
+        "",
+        _paragraph(
+            f"本报告面向{project.target_company}形成企业层面的决策支持",
+            f"企业当前战略意图为{project.company_strategy_objective}",
+            f"需要支持的业务决策为{project.decision_context or '围绕既定战略意图开展方向判断与资源配置'}",
+            f"公司综合得分为{weighted_score}，已评分权重覆盖率为{scorecard.scored_weight:.0%}",
+            scorecard.overall_assessment,
+        ),
+        "",
+        "## B. 公司能力评分",
+        "",
+        "| 评估维度 | 得分 | 权重 | 置信度 | 数据完整度 | 对标对象 |",
+        "|---|---:|---:|---:|---:|---|",
+    ]
+    benchmark_names = {item.benchmark_id: item.name for item in scorecard.benchmarks}
+    for item in accepted_dimensions:
+        benchmark = "、".join(benchmark_names.get(value, value) for value in item.benchmark_ids)
+        score = f"{item.score:.1f}" if item.score is not None else "未评分"
+        lines.append(
+            f"| {item.title} | {score} | {item.weight:.0%} | {item.confidence}% | "
+            f"{item.data_completeness}% | {benchmark or '未指定'} |"
+        )
+    lines.extend(
+        [
+            "",
+            "### B.1 战略优势",
+            "",
+            _paragraph(*(scorecard.strategic_advantages or ["现有证据尚不足以形成明确的战略优势判断"])),
+            "",
+            "### B.2 关键差距",
+            "",
+            _paragraph(*(scorecard.critical_gaps or ["现有证据尚不足以形成明确的关键差距判断"])),
+            "",
+            "### B.3 跨维度风险",
+            "",
+            _paragraph(*(scorecard.cross_dimension_risks or ["现有证据尚未识别额外的跨维度风险"])),
+            "",
+            "## C. 经审核的战略行动计划",
+            "",
+        ]
+    )
+    for index, action in enumerate(accepted_actions, start=1):
+        traceability = (
+            f"评分维度记录为{', '.join(action.score_dimension_ids) or '未记录'}；"
+            f"公开证据记录为{', '.join(action.evidence_ids) or '未记录'}；"
+            f"企业证据记录为{', '.join(action.enterprise_evidence_ids) or '未记录'}；"
+            f"趋势记录为{', '.join(action.trend_ids) or '未记录'}"
+        )
+        lines.extend(
+            [
+                f"### C.{index} {action.title}",
+                "",
+                _paragraph(
+                    f"该项行动优先级为{action.priority.value}，并以{action.strategic_objective}为战略锚点",
+                    f"建议由{action.owner_role}负责，并在{action.timing}内推进",
+                    action.rationale,
+                    f"所需资源包括{'、'.join(action.resources)}",
+                    f"主要依赖包括{'、'.join(action.dependencies) if action.dependencies else '无额外依赖'}",
+                    f"主要风险包括{'、'.join(action.risks)}，对应缓解措施包括{'、'.join(action.mitigations)}",
+                    f"若出现{'、'.join(action.stop_conditions)}，应停止、调整或转向该项行动",
+                    f"该建议置信度为{action.confidence}%，主要不确定性为{action.uncertainty}",
+                    traceability,
+                ),
+                "",
+                "| 指标类型 | 指标名称 | 指标定义 | 目标值 | 时间要求 | 数据来源 |",
+                "|---|---|---|---|---|---|",
+            ]
+        )
+        for kpi in action.kpis:
+            lines.append(
+                f"| {kpi.kpi_type.value} | {kpi.name} | {kpi.definition} | "
+                f"{kpi.target} | {kpi.timing} | {kpi.data_source} |"
+            )
+
+    lines.extend(
+        [
+            "",
+            "## D. 推进顺序及组合风险",
+            "",
+            "### D.1 推进顺序",
+            "",
+            _paragraph(*action_plan.sequencing_logic),
+            "",
+            "### D.2 未采纳选项",
+            "",
+            _paragraph(*(action_plan.rejected_options or ["本轮审核未记录其他未采纳选项"])),
+            "",
+            "### D.3 组合风险",
+            "",
+            _paragraph(*(action_plan.portfolio_risks or ["本轮审核未记录额外组合风险"])),
+            "",
+            "## E. 人工审核及责任边界",
+            "",
+            _paragraph(
+                f"公司评分确认时间为{scorecard.confirmed_at or '未记录'}",
+                f"行动计划确认时间为{action_plan.confirmed_at or '未记录'}",
+                (
+                    "本报告属于证据约束下的研究与决策支持文件，不替代企业管理层、法务、财务、"
+                    "临床或其他责任主体的最终判断"
+                ),
+            ),
+            "",
+            "# 附录：通用行业研究报告",
             "",
             general.markdown,
         ]

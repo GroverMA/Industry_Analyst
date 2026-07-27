@@ -430,8 +430,8 @@ def test_scorecard_and_action_plan_require_human_review() -> None:
 
     project = project.model_copy(update={"action_plan_artifact": action_plan})
     report = generate_enterprise_decision_report(project)
-    assert "Company Scorecard" in report.markdown
-    assert "停止/转向条件" in report.markdown
+    assert "公司能力评分" in report.markdown
+    assert "停止、调整或转向" in report.markdown
     assert enterprise_id in report.markdown
 
 

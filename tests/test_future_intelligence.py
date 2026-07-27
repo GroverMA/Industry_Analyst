@@ -417,9 +417,12 @@ def test_general_report_is_composed_only_after_both_gates() -> None:
 
     report = generate_general_report(reviewed_project)
 
-    assert "Human-reviewed General Industry Report" in report.markdown
+    assert "本报告依据经人工确认的市场口径" in report.markdown
     assert evidence.evidence_id in report.markdown
     assert report.source_count == 1
+    assert "➡" not in report.markdown
+    assert "👉" not in report.markdown
+    assert not any(line.startswith("- ") for line in report.markdown.splitlines())
 
 
 def test_report_semantically_checks_original_prompt_coverage() -> None:
@@ -461,5 +464,5 @@ def test_report_semantically_checks_original_prompt_coverage() -> None:
     report = ReportGenerationService(FakeModel(coverage_payload)).generate(reviewed_project)
 
     assert report.prompt_coverage[0].coverage_status == "answered"
-    assert "Original Prompt Coverage" in report.markdown
+    assert "对原始研究问题的回应" in report.markdown
     assert report.unresolved_prompt_questions == []

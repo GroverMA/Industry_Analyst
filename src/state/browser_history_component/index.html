@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+  </head>
+  <body style="margin:0; height:0; overflow:hidden; background:transparent">
+    <script>
+      const DB_NAME = "industry-analyst-os";
+      const DB_VERSION = 1;
+      const PROJECTS = "projects";
+      const FOLDERS = "folders";
+      let lastResponse = "";
+      let renderSequence = 0;
+
+      function post(type, payload = {}) {
+        window.parent.postMessage({ isStreamlitMessage: true, type, ...payload }, "*");
+      }
+
+      function ready() {
+        post("streamlit:componentReady", { apiVersion: 1 });
+        post("streamlit:setFrameHeight", { height: 0 });
+      }
+
+      function sendValue(value) {
+        const serialized = JSON.stringify(value);
+        if (serialized === lastResponse) return;
+        lastResponse = serialized;
+        post("streamlit:setComponentValue", { value, dataType: "json" });
+      }
+
+      function openDatabase() {
+        return new Promise((resolve, reject) => {
+          const request = indexedDB.open(DB_NAME, DB_VERSION);
+          request.onupgradeneeded = () => {
+            const db = request.result;
+            if (!db.objectStoreNames.contains(PROJECTS)) {
+              const projects = db.createObjectStore(PROJECTS, { keyPath: "project_id" });
+              projects.createIndex("updated_at", "updated_at", { unique: false });
+              projects.createIndex("status_group", "status_group", { unique: false });
+              projects.createIndex("folder_id", "folder_id", { unique: false });
+            }
+            if (!db.objectStoreNames.contains(FOLDERS)) {
+              db.createObjectStore(FOLDERS, { keyPath: "folder_id" });
+            }
+          };
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+      }
+
+      function requestResult(request) {
+        return new Promise((resolve, reject) => {
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+      }
+
+      function transactionDone(transaction) {
+        return new Promise((resolve, reject) => {
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error);
+          transaction.onabort = () => reject(transaction.error);
+        });
+      }
+
+      async function upsertProject(db, incoming) {
+        if (!incoming || !incoming.project_id) return;
+        const readTx = db.transaction(PROJECTS, "readonly");
+        const existing = await requestResult(readTx.objectStore(PROJECTS).get(incoming.project_id));
+        const record = {
+          ...incoming,
+          folder_id: existing?.folder_id || null,
+          saved_at: new Date().toISOString(),
+        };
+        const writeTx = db.transaction(PROJECTS, "readwrite");
+        writeTx.objectStore(PROJECTS).put(record);
+        await transactionDone(writeTx);
+      }
+
+      async function createFolder(db, command) {
+        const name = String(command.name || "").trim();
+        if (!name) return;
+        const tx = db.transaction(FOLDERS, "readwrite");
+        tx.objectStore(FOLDERS).put({
+          folder_id: command.folder_id,
+          name,
+          created_at: new Date().toISOString(),
+        });
+        await transactionDone(tx);
+      }
+
+      async function moveProject(db, command) {
+        const readTx = db.transaction(PROJECTS, "readonly");
+        const record = await requestResult(readTx.objectStore(PROJECTS).get(command.project_id));
+        if (!record) return;
+        record.folder_id = command.folder_id || null;
+        const writeTx = db.transaction(PROJECTS, "readwrite");
+        writeTx.objectStore(PROJECTS).put(record);
+        await transactionDone(writeTx);
+      }
+
+      async function loadProject(db, projectId) {
+        const tx = db.transaction(PROJECTS, "readonly");
+        return await requestResult(tx.objectStore(PROJECTS).get(projectId));
+      }
+
+      async function catalog(db) {
+        const ptx = db.transaction(PROJECTS, "readonly");
+        const projectRows = await requestResult(ptx.objectStore(PROJECTS).getAll());
+        const ftx = db.transaction(FOLDERS, "readonly");
+        const folderRows = await requestResult(ftx.objectStore(FOLDERS).getAll());
+        projectRows.sort((a, b) => String(b.updated_at || b.saved_at).localeCompare(String(a.updated_at || a.saved_at)));
+        folderRows.sort((a, b) => String(a.name).localeCompare(String(b.name), "zh-CN"));
+        return {
+          projects: projectRows.map((row) => ({
+            project_id: row.project_id,
+            project_name: row.project_name,
+            industry: row.industry,
+            region: row.region,
+            progress: row.progress,
+            current_step: row.current_step,
+            node_label: row.node_label,
+            status_group: row.status_group,
+            updated_at: row.updated_at,
+            active_page: row.active_page,
+            folder_id: row.folder_id || null,
+          })),
+          folders: folderRows,
+        };
+      }
+
+      async function handleRender(args, sequence) {
+        const db = await openDatabase();
+        await upsertProject(db, args.project_record);
+        const command = args.command || null;
+        let loaded = null;
+        if (command?.type === "create_folder") await createFolder(db, command);
+        if (command?.type === "move") await moveProject(db, command);
+        if (command?.type === "load") loaded = await loadProject(db, command.project_id);
+        const currentCatalog = await catalog(db);
+        db.close();
+        if (sequence !== renderSequence) return;
+        sendValue({
+          ...currentCatalog,
+          request_id: command?.request_id || null,
+          loaded_project: loaded?.project_state || null,
+          loaded_active_page: loaded?.active_page || null,
+          error: null,
+        });
+      }
+
+      window.addEventListener("message", (event) => {
+        if (event.data?.type !== "streamlit:render") return;
+        const sequence = ++renderSequence;
+        handleRender(event.data.args || {}, sequence).catch((error) => {
+          sendValue({
+            projects: [],
+            folders: [],
+            request_id: event.data.args?.command?.request_id || null,
+            loaded_project: null,
+            loaded_active_page: null,
+            error: String(error?.message || error),
+          });
+        });
+      });
+
+      ready();
+    </script>
+  </body>
+</html>

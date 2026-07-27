@@ -39,14 +39,29 @@ INK = "172033"
 MUTED = "667085"
 LIGHT_FILL = "EEF5F5"
 REPORT_FONT = "Calibri"
-REPORT_CJK_FONT = "Noto Sans CJK SC"
 PDF_CJK_FONT = "IndustryReportCJK"
+WORD_CJK_FONT_CANDIDATES = (
+    ("Noto Sans CJK SC", "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
+    ("Noto Sans CJK SC", "/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf"),
+    ("Arial Unicode MS", "/System/Library/Fonts/Supplemental/Arial Unicode.ttf"),
+    ("Hiragino Sans GB", "/System/Library/Fonts/Hiragino Sans GB.ttc"),
+)
 PDF_FONT_CANDIDATES = (
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
     "/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf",
     "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
     "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
 )
+
+
+def _resolve_word_cjk_font() -> str:
+    for family, location in WORD_CJK_FONT_CANDIDATES:
+        if Path(location).is_file():
+            return family
+    return "Noto Sans CJK SC"
+
+
+REPORT_CJK_FONT = _resolve_word_cjk_font()
 
 
 @dataclass(frozen=True)
@@ -272,7 +287,13 @@ def _add_markdown_to_word(
             if level == 1 and skip_first_title and not first_heading_skipped:
                 first_heading_skipped = True
                 continue
-            style = "Heading 1" if level <= 2 else "Heading 2"
+            style = (
+                "Heading 1"
+                if level <= 2
+                else "Heading 2"
+                if level == 3
+                else "Heading 3"
+            )
             paragraph = document.add_paragraph(style=style)
             _add_word_inline(paragraph, text)
         elif kind == "bullet":
@@ -317,7 +338,7 @@ def _markdown_blocks(markdown: str):
             width = max(len(row) for row in rows)
             yield "table", [row + [""] * (width - len(row)) for row in rows], 0
             continue
-        heading = re.match(r"^(#{1,3})\s+(.*)$", line)
+        heading = re.match(r"^(#{1,6})\s+(.*)$", line)
         if heading:
             yield "heading", heading.group(2).strip(), len(heading.group(1))
             index += 1

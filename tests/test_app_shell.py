@@ -12,6 +12,7 @@ def test_streamlit_shell_starts_without_exception() -> None:
 
     assert not app.exception
     assert any("Industry Analyst OS" in item.value for item in app.markdown)
+    assert not any(item.value == "恢复已有研究项目" for item in app.subheader)
 
 
 def test_case_opens_single_page_research_studio() -> None:
@@ -26,4 +27,4 @@ def test_case_opens_single_page_research_studio() -> None:
     assert app.segmented_control[0].label == "工作模式"
     assert app.segmented_control[0].options == ["快速通用报告", "高级分析师工作台"]
     assert any(button.label == "AI分析研究需求并生成市场描述" for button in app.button)
-    assert any(item.value == "项目记忆与恢复" for item in app.subheader)
+    assert any(button.label == "新建研究" for button in app.button)

@@ -158,7 +158,7 @@ def test_enterprise_sensing_page_renders_for_case_project() -> None:
     next(button for button in app.button if button.label == "加载案例展示").click().run(
         timeout=10
     )
-    app.radio[0].set_value("Enterprise Sensing  ·  企业感知").run(timeout=10)
+    app.selectbox[0].set_value("enterprise_sensing").run(timeout=10)
 
     assert not app.exception
     assert [item.value for item in app.subheader] == [

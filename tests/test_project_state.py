@@ -3,6 +3,12 @@ from __future__ import annotations
 from pydantic import ValidationError
 
 from src.state.project import ProjectState, ResearchMode, WorkflowStatus, WorkspaceMode
+from src.state.browser_history import (
+    build_project_record,
+    project_is_complete,
+    project_node_label,
+    project_progress,
+)
 from src.state.session import PROJECT_KEY, clear_project, get_project, set_project
 
 
@@ -127,3 +133,29 @@ def test_session_helpers_round_trip_project() -> None:
     assert get_project(state) == project
     clear_project(state)
     assert get_project(state) is None
+
+
+def test_browser_history_record_preserves_full_resumable_project() -> None:
+    project = make_project().update_step("industry_analysis", WorkflowStatus.NEEDS_REVIEW)
+
+    record = build_project_record(project, "research_studio")
+    restored = ProjectState.model_validate(record["project_state"])
+
+    assert restored == project
+    assert record["project_id"] == project.project_id
+    assert record["active_page"] == "research_studio"
+    assert record["status_group"] == "in_progress"
+    assert "待审核" in record["node_label"]
+
+
+def test_project_history_progress_excludes_non_applicable_steps() -> None:
+    project = make_project()
+    statuses = dict(project.workflow_status)
+    statuses["research_brief"] = WorkflowStatus.COMPLETED
+    statuses["company_assessment"] = WorkflowStatus.NOT_APPLICABLE
+    statuses["action_plan"] = WorkflowStatus.NOT_APPLICABLE
+    project = project.model_copy(update={"workflow_status": statuses})
+
+    assert project_progress(project) == 12
+    assert project_is_complete(project) is False
+    assert project_node_label(project) == "Research Brief"

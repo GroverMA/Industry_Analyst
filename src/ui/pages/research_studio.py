@@ -1302,14 +1302,3 @@ def render(project: ProjectState | None) -> None:
                     st.rerun()
         else:
             _render_report(project)
-
-    st.divider()
-    st.subheader("项目记忆与恢复")
-    st.caption("项目快照包含研究材料和可能的企业输入，请按其敏感级别妥善保存。")
-    st.download_button(
-        "下载完整项目快照",
-        data=project.model_dump_json(indent=2).encode("utf-8"),
-        file_name=f"{project.project_id}.industry-project.json",
-        mime="application/json",
-        width="stretch",
-    )
