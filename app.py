@@ -49,7 +49,7 @@ st.set_page_config(
 
 
 RUNTIME_RELEASE_KEY = "industry_analyst_runtime_release"
-RUNTIME_RELEASE_ID = "future-intelligence-controls-v1"
+RUNTIME_RELEASE_ID = "enterprise-strategy-pipeline-v2"
 
 # Community Cloud updates the checkout without always restarting the Python
 # process. Refresh the modules changed by this release once per browser session
@@ -65,8 +65,18 @@ if st.session_state.get(RUNTIME_RELEASE_KEY) != RUNTIME_RELEASE_ID:
     research_studio_module = importlib.reload(research_studio_module)
     trend_forecast_module = importlib.import_module("src.ui.pages.trend_forecast")
     trend_forecast_module = importlib.reload(trend_forecast_module)
+    home_module = importlib.reload(importlib.import_module("src.ui.pages.home"))
+    enterprise_module = importlib.reload(importlib.import_module("src.ui.pages.enterprise_sensing"))
+    scorecard_module = importlib.reload(importlib.import_module("src.ui.pages.company_scorecard"))
+    action_plan_module = importlib.reload(importlib.import_module("src.ui.pages.action_plan"))
+    decision_report_module = importlib.reload(importlib.import_module("src.ui.pages.decision_report"))
     pages_registry.PAGE_RENDERERS["research_studio"] = research_studio_module.render
     pages_registry.PAGE_RENDERERS["trend_forecast"] = trend_forecast_module.render
+    pages_registry.PAGE_RENDERERS["home"] = home_module.render
+    pages_registry.PAGE_RENDERERS["enterprise_sensing"] = enterprise_module.render
+    pages_registry.PAGE_RENDERERS["company_scorecard"] = scorecard_module.render
+    pages_registry.PAGE_RENDERERS["action_plan"] = action_plan_module.render
+    pages_registry.PAGE_RENDERERS["decision_report"] = decision_report_module.render
     theme = importlib.reload(theme)
     st.session_state[RUNTIME_RELEASE_KEY] = RUNTIME_RELEASE_ID
 

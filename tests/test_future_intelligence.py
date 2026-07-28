@@ -349,6 +349,33 @@ def test_future_discards_unsupported_player_move_without_blocking_forecast() -> 
     assert any("行动推演因无可验证证据引用而未采用" in gap for gap in future.forecast_gaps)
 
 
+def test_future_normalizes_natural_language_category_without_lowering_evidence_gates() -> None:
+    project, evidence_artifact, analysis, evidence, finding = fixtures()
+    generated = payload(evidence.evidence_id, finding.finding_id)
+    generated["trends"][0]["category"] = "market_structure"
+
+    future = FutureIntelligenceService(
+        FakeModel(generated), load_active_sop()
+    ).generate(project, evidence_artifact, analysis)
+
+    assert future.trends[0].category.value == "competitive_landscape"
+    assert future.trends[0].evidence_ids == [evidence.evidence_id]
+
+
+def test_future_semantically_classifies_an_unknown_category() -> None:
+    project, evidence_artifact, analysis, evidence, finding = fixtures()
+    generated = payload(evidence.evidence_id, finding.finding_id)
+    generated["trends"][0]["category"] = "ecosystem_transition"
+    generated["trends"][0]["title"] = "生态协同变化"
+
+    future = FutureIntelligenceService(
+        FakeModel(generated), load_active_sop()
+    ).generate(project, evidence_artifact, analysis)
+
+    assert future.trends[0].category.value == "customer_demand"
+    assert any("原始分类" in gap for gap in future.forecast_gaps)
+
+
 def test_future_keeps_valid_part_of_mixed_nested_references() -> None:
     project, evidence_artifact, analysis, evidence, finding = fixtures()
     generated = payload(evidence.evidence_id, finding.finding_id)

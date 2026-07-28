@@ -26,7 +26,7 @@ from src.services.industry_analysis import (
     review_analysis_finding,
 )
 from src.state.project import ProjectState, WorkflowStatus
-from src.state.session import ACTIVE_PAGE_KEY, set_project
+from src.state.session import queue_page_navigation, set_project
 from src.ui.agent_services import evidence_collection_service, industry_analysis_service
 from src.ui.components import (
     badge,
@@ -294,7 +294,7 @@ def render(project: ProjectState | None) -> None:
     ):
         st.warning("请先在 Research Workflow 生成并批准研究计划。未经批准不会启动网页搜索。")
         if st.button("前往 Research Workflow", type="primary"):
-            st.session_state[ACTIVE_PAGE_KEY] = "workflow"
+            queue_page_navigation(st.session_state, "workflow")
             st.rerun()
         return
 

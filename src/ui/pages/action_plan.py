@@ -15,7 +15,7 @@ from src.services.action_planning import (
     review_action,
 )
 from src.state.project import ProjectState, WorkflowStatus
-from src.state.session import ACTIVE_PAGE_KEY, set_project
+from src.state.session import queue_page_navigation, set_project
 from src.ui.agent_services import action_planning_service
 from src.ui.components import badge, page_header, render_methodology_trace, require_project
 
@@ -48,7 +48,7 @@ def render(project: ProjectState | None) -> None:
     if not project.company_strategy_enabled:
         st.info("通用行业研究不生成某家公司的Action Plan，避免把行业趋势误写成企业战略建议。")
         if st.button("返回 Research Studio", width="stretch"):
-            st.session_state[ACTIVE_PAGE_KEY] = "research_studio"
+            queue_page_navigation(st.session_state, "research_studio")
             st.rerun()
         return
 
@@ -61,7 +61,7 @@ def render(project: ProjectState | None) -> None:
     if reasons:
         st.warning("Action Plan仍锁定：\n\n" + "\n\n".join(f"- {reason}" for reason in reasons))
         if st.button("返回 Company Scorecard", width="stretch"):
-            st.session_state[ACTIVE_PAGE_KEY] = "company_scorecard"
+            queue_page_navigation(st.session_state, "company_scorecard")
             st.rerun()
         return
 
@@ -201,5 +201,5 @@ def render(project: ProjectState | None) -> None:
                 }
             )
             set_project(st.session_state, updated)
-            st.session_state[ACTIVE_PAGE_KEY] = "decision_report"
+            queue_page_navigation(st.session_state, "decision_report")
             st.rerun()

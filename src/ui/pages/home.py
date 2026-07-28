@@ -5,7 +5,7 @@ from __future__ import annotations
 import streamlit as st
 
 from src.state.golden_case import load_golden_case
-from src.state.project import ProjectState, ResearchMode, WorkflowStatus
+from src.state.project import ProjectState, ResearchMode, WorkflowStatus, WorkspaceMode
 from src.state.session import queue_page_navigation, set_project
 
 
@@ -46,7 +46,7 @@ def render(project: ProjectState | None) -> None:
             unsafe_allow_html=True,
         )
         company_strategy_enabled = st.toggle(
-            "启用企业战略路径（Company Scorecard + Action Plan）",
+            "企业战略决策支持",
             value=False,
             help="关闭时仍可完成通用行业研究与趋势报告；开启后必须提供目标企业、战略意图和经确认的企业一手资料。",
             key="new_project_company_strategy_enabled",
@@ -97,11 +97,6 @@ def render(project: ProjectState | None) -> None:
                     height=110,
                     help="这是Action Plan的首要输入。系统不会根据行业趋势替企业虚构战略。",
                 )
-            decision_context = st.text_area(
-                "需要支持的业务决策（可选）",
-                placeholder="例如：是否进入某个市场、优先投资哪条产品线。仅做行业全景研究时可以留空。",
-                height=90,
-            )
             col_c, col_d = st.columns(2)
             time_horizon = col_c.text_input("时间范围", placeholder="例如：2026—2030")
             output_language = col_d.selectbox(
@@ -136,11 +131,16 @@ def render(project: ProjectState | None) -> None:
                         target_company=target_company,
                         company_strategy_enabled=company_strategy_enabled,
                         company_strategy_objective=company_strategy_objective or None,
-                        decision_context=decision_context or None,
+                        decision_context=None,
                         research_objective=research_objective,
                         time_horizon=time_horizon,
                         output_language=output_language,
                         research_mode=ResearchMode.GENERAL,
+                        workspace_mode=(
+                            WorkspaceMode.ANALYST_WORKSPACE
+                            if company_strategy_enabled
+                            else WorkspaceMode.QUICK_REPORT
+                        ),
                     )
                     if not company_strategy_enabled:
                         statuses = dict(new_project.workflow_status)

@@ -15,7 +15,7 @@ from src.services.company_assessment import (
     scorecard_gate_reasons,
 )
 from src.state.project import ProjectState, WorkflowStatus
-from src.state.session import ACTIVE_PAGE_KEY, set_project
+from src.state.session import queue_page_navigation, set_project
 from src.ui.agent_services import company_assessment_service
 from src.ui.components import badge, page_header, render_methodology_trace, require_project
 
@@ -50,7 +50,7 @@ def render(project: ProjectState | None) -> None:
     if not project.company_strategy_enabled:
         st.info("通用行业研究不会猜测企业能力。启用企业战略路径后，才会生成公司评分与行动建议。")
         if st.button("返回 Research Studio 启用企业定制分析", width="stretch"):
-            st.session_state[ACTIVE_PAGE_KEY] = "research_studio"
+            queue_page_navigation(st.session_state, "research_studio")
             st.rerun()
         return
 
@@ -65,10 +65,10 @@ def render(project: ProjectState | None) -> None:
         st.warning("Company Scorecard仍锁定：\n\n" + "\n\n".join(f"- {reason}" for reason in reasons))
         col_a, col_b = st.columns(2)
         if col_a.button("返回研究主流程", width="stretch"):
-            st.session_state[ACTIVE_PAGE_KEY] = "research_studio"
+            queue_page_navigation(st.session_state, "research_studio")
             st.rerun()
         if col_b.button("完善 Enterprise Sensing", width="stretch"):
-            st.session_state[ACTIVE_PAGE_KEY] = "enterprise_sensing"
+            queue_page_navigation(st.session_state, "enterprise_sensing")
             st.rerun()
         return
 
@@ -186,5 +186,5 @@ def render(project: ProjectState | None) -> None:
                 }
             )
             set_project(st.session_state, updated)
-            st.session_state[ACTIVE_PAGE_KEY] = "action_plan"
+            queue_page_navigation(st.session_state, "action_plan")
             st.rerun()

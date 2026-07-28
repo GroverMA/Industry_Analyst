@@ -190,8 +190,7 @@ class ActionPlanningService:
                 role="user",
                 content=(
                     f"目标企业：{project.target_company}\n"
-                    f"企业战略目标：{project.company_strategy_objective}\n"
-                    f"业务决策：{project.decision_context or '未指定'}\n\n"
+                    f"企业战略目标：{project.company_strategy_objective}\n\n"
                     f"批准材料：{json.dumps(context, ensure_ascii=False)}\n\n"
                     f"严格输出结构：{json.dumps(ACTION_PLAN_CONTRACT, ensure_ascii=False)}"
                 ),

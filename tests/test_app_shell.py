@@ -39,9 +39,9 @@ def test_case_opens_single_page_research_studio() -> None:
     )
 
     assert not app.exception
-    assert app.segmented_control[0].label == "工作模式"
-    assert app.segmented_control[0].options == ["快速通用报告", "高级分析师工作台"]
-    assert any(button.label == "AI分析研究需求并生成市场描述" for button in app.button)
+    assert not app.segmented_control
+    assert any("高级分析师工作台（企业战略项目）" in item.value for item in app.markdown)
+    assert any(button.label == "接入或审核企业一手数据" for button in app.button)
     assert any(button.label == "新建研究" for button in app.button)
 
 
@@ -57,7 +57,41 @@ def test_project_home_continue_uses_queued_navigation_without_state_error() -> N
     ).click().run(timeout=10)
 
     assert not app.exception
-    assert app.segmented_control[0].label == "工作模式"
+    assert not app.segmented_control
+    assert any("高级分析师工作台（企业战略项目）" in item.value for item in app.markdown)
+
+
+def test_strategy_workspace_opens_enterprise_upload_without_widget_state_error() -> None:
+    app_path = Path(__file__).resolve().parents[1] / "app.py"
+    app = AppTest.from_file(str(app_path)).run(timeout=10)
+    next(button for button in app.button if button.label == "加载案例展示").click().run(
+        timeout=10
+    )
+
+    next(
+        button for button in app.button if button.label == "接入或审核企业一手数据"
+    ).click().run(timeout=10)
+
+    assert not app.exception
+    assert any(item.value == "B. 上传脱敏企业文件" for item in app.subheader)
+    assert app.file_uploader[0].label == "选择文件"
+
+
+def test_home_only_shows_strategy_intent_when_strategy_support_is_enabled() -> None:
+    app_path = Path(__file__).resolve().parents[1] / "app.py"
+    app = AppTest.from_file(str(app_path)).run(timeout=10)
+
+    labels = {item.label for item in app.text_area}
+    assert "需要支持的业务决策（可选）" not in labels
+    assert "企业战略意图（必填）" not in labels
+
+    next(toggle for toggle in app.toggle if toggle.label == "企业战略决策支持").set_value(
+        True
+    ).run(timeout=10)
+
+    labels = {item.label for item in app.text_area}
+    assert "企业战略意图（必填）" in labels
+    assert "需要支持的业务决策（可选）" not in labels
 
 
 def test_sidebar_exposes_row_level_finish_and_delete_controls() -> None:

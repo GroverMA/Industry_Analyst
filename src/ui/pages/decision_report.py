@@ -17,7 +17,7 @@ from src.services.strategy_report import (
     generate_enterprise_decision_report,
 )
 from src.state.project import ProjectState, WorkflowStatus
-from src.state.session import ACTIVE_PAGE_KEY, set_project
+from src.state.session import queue_page_navigation, set_project
 from src.ui.components import page_header, require_project
 
 
@@ -26,11 +26,18 @@ def _safe_name(value: str) -> str:
 
 
 def render(project: ProjectState | None) -> None:
-    page_header(
-        "08 · Decision Report",
-        "下载通用行业报告或企业决策报告",
-        "通用报告回答行业问题；企业决策版在其上叠加经人工确认的公司评分、战略行动、KPI、风险与停止条件。",
-    )
+    if project is not None and project.company_strategy_enabled:
+        page_header(
+            "Enterprise Report",
+            "企业战略决策报告",
+            "把行业研究底稿、企业一手资料、公司评分和Action Plan整合为可追溯的企业决策报告。",
+        )
+    else:
+        page_header(
+            "Decision Report",
+            "通用行业研究报告",
+            "通用报告回答行业现状、竞争格局、驱动因素与未来趋势，并提供Word和PDF版本。",
+        )
     if not require_project(project):
         return
     assert project is not None
@@ -39,60 +46,51 @@ def render(project: ProjectState | None) -> None:
     if general is None:
         st.warning("通用报告尚未生成。请在Research Studio依次完成市场口径、证据和报告内容审核。")
         if st.button("返回 Research Studio", type="primary", width="stretch"):
-            st.session_state[ACTIVE_PAGE_KEY] = "research_studio"
+            queue_page_navigation(st.session_state, "research_studio")
             st.rerun()
         return
 
-    st.subheader("A. 通用行业研究报告")
-    st.success("适用于不提供企业资料的用户，也可作为企业决策版的行业研究底稿。")
-    cols = st.columns(3)
-    cols[0].metric("采用证据", len(general.accepted_evidence_ids))
-    cols[1].metric("采用判断", len(general.accepted_finding_ids))
-    cols[2].metric("独立来源", general.source_count)
-    with st.expander("预览通用行业报告", expanded=not project.company_strategy_enabled):
-        st.markdown(general.markdown)
     safe_name = _safe_name(project.project_name)
-    general_context = project_report_context(
-        project,
-        title=general.title,
-        markdown=general.markdown,
-        report_status="经人工审核的通用行业研究报告",
-        generated_at=general.generated_at,
-    )
-    col_a, col_b = st.columns(2)
-    col_a.download_button(
-        "下载通用报告 Word",
-        data=build_report_docx(general_context),
-        file_name=f"{safe_name}.docx",
-        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        width="stretch",
-        type="primary",
-    )
-    col_b.download_button(
-        "下载通用报告 PDF",
-        data=build_report_pdf(general_context),
-        file_name=f"{safe_name}.pdf",
-        mime="application/pdf",
-        width="stretch",
-        type="primary",
-    )
-
     if not project.company_strategy_enabled:
-        st.info("当前为通用行业研究路径，因此报告不包含Company Scorecard与Action Plan。")
+        st.subheader("通用行业研究报告")
+        cols = st.columns(3)
+        cols[0].metric("采用证据", len(general.accepted_evidence_ids))
+        cols[1].metric("采用判断", len(general.accepted_finding_ids))
+        cols[2].metric("独立来源", general.source_count)
+        with st.expander("预览通用行业报告", expanded=True):
+            st.markdown(general.markdown)
+        general_context = project_report_context(
+            project,
+            title=general.title,
+            markdown=general.markdown,
+            report_status="经人工审核的通用行业研究报告",
+            generated_at=general.generated_at,
+        )
+        col_a, col_b = st.columns(2)
+        col_a.download_button(
+            "下载通用报告 Word", data=build_report_docx(general_context),
+            file_name=f"{safe_name}.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            width="stretch", type="primary",
+        )
+        col_b.download_button(
+            "下载通用报告 PDF", data=build_report_pdf(general_context),
+            file_name=f"{safe_name}.pdf", mime="application/pdf",
+            width="stretch", type="primary",
+        )
         return
 
-    st.divider()
-    st.subheader("B. 企业决策报告")
+    st.subheader("企业决策报告")
     st.caption("只有公司评分和Action Plan都通过人工审核后，才会把企业资料与行业结论合并为决策版报告。")
     reasons = enterprise_report_gate_reasons(project)
     if reasons:
         st.warning("企业决策版尚未就绪：\n\n" + "\n\n".join(f"- {reason}" for reason in reasons))
         navigation = st.columns(2)
         if navigation[0].button("查看 Company Scorecard", width="stretch"):
-            st.session_state[ACTIVE_PAGE_KEY] = "company_scorecard"
+            queue_page_navigation(st.session_state, "company_scorecard")
             st.rerun()
         if navigation[1].button("查看 Action Plan", width="stretch"):
-            st.session_state[ACTIVE_PAGE_KEY] = "action_plan"
+            queue_page_navigation(st.session_state, "action_plan")
             st.rerun()
         return
 

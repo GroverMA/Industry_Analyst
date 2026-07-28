@@ -17,7 +17,7 @@ from src.services.future_intelligence import (
     review_forecast_item,
 )
 from src.state.project import ProjectState, WorkflowStatus
-from src.state.session import ACTIVE_PAGE_KEY, set_project
+from src.state.session import queue_page_navigation, set_project
 from src.ui.agent_services import future_intelligence_service
 from src.ui.components import (
     information_card,
@@ -33,6 +33,7 @@ CATEGORY_LABELS = {
     "business_model": "商业模式",
     "customer_demand": "客户需求",
     "policy_capital_value_chain": "政策、资本与产业链",
+    "cross_cutting": "跨因素综合趋势",
 }
 
 REVIEW_LABELS = {
@@ -271,7 +272,7 @@ def render(project: ProjectState | None) -> None:
     ):
         st.warning("请先完成Evidence Matrix与当前Industry Analysis的人工审核。未来预测不能绕过当前事实和判断阶段。")
         if st.button("前往 Evidence & Analysis", type="primary"):
-            st.session_state[ACTIVE_PAGE_KEY] = "evidence_analysis"
+            queue_page_navigation(st.session_state, "evidence_analysis")
             st.rerun()
         return
 

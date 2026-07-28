@@ -282,8 +282,16 @@ def _render_project_organizer(catalog: dict, project: ProjectState | None) -> No
 
 def _render_workspace_navigation(project: ProjectState) -> str:
     st.markdown('<div class="ia-sidebar-section">当前项目工作台</div>', unsafe_allow_html=True)
-    keys = [page.key for page in PAGES]
-    labels = {page.key: f"{page.label} · {page.short_label}" for page in PAGES}
+    available_pages = list(PAGES)
+    if project.company_strategy_enabled:
+        available_pages = [
+            page for page in available_pages
+            if page.key not in {"research_brief", "workflow"}
+        ]
+    keys = [page.key for page in available_pages]
+    labels = {page.key: f"{page.label} · {page.short_label}" for page in available_pages}
+    if project.company_strategy_enabled:
+        labels["decision_report"] = "Enterprise Report · 企业决策报告"
     current = st.session_state.get(ACTIVE_PAGE_KEY, "research_studio")
     if current not in keys:
         st.session_state[ACTIVE_PAGE_KEY] = "research_studio"

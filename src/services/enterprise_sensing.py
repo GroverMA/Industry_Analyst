@@ -289,6 +289,21 @@ def extract_document_text(file_name: str, mime_type: str | None, data: bytes) ->
             for row in sheet.iter_rows(values_only=True):
                 lines.append(" | ".join("" if value is None else str(value) for value in row))
         return "\n".join(lines)
+    if suffix == "pptx":
+        from pptx import Presentation
+
+        presentation = Presentation(io.BytesIO(data))
+        lines: list[str] = []
+        for index, slide in enumerate(presentation.slides, start=1):
+            lines.append(f"[Slide: {index}]")
+            for shape in slide.shapes:
+                text = getattr(shape, "text", "")
+                if text and text.strip():
+                    lines.append(text.strip())
+                if getattr(shape, "has_table", False):
+                    for row in shape.table.rows:
+                        lines.append(" | ".join(cell.text.strip() for cell in row.cells))
+        return "\n".join(lines)
     raise EnterpriseSensingError("暂不支持该文件格式")
 
 

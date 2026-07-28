@@ -13,7 +13,7 @@ from src.models.research import ResearchBriefArtifact
 from src.providers.base import ProviderError
 from src.services.research_planning import SOPComplianceError
 from src.state.project import ProjectState, WorkflowStatus
-from src.state.session import ACTIVE_PAGE_KEY, set_project
+from src.state.session import queue_page_navigation, set_project
 from src.ui.agent_services import research_planning_service
 from src.ui.components import (
     badge,
@@ -60,7 +60,7 @@ def render(project: ProjectState | None) -> None:
 
     st.subheader("A. 项目原始输入")
     company_strategy_enabled = st.toggle(
-        "启用企业战略路径（Company Scorecard + Action Plan）",
+        "企业战略决策支持",
         value=project.company_strategy_enabled,
         key=f"brief_strategy_path_{project.project_id}",
         help="通用行业报告无需启用。启用后，目标企业、战略意图和经确认的一手资料是公司评分与Action Plan的硬性条件。",
@@ -102,12 +102,6 @@ def render(project: ProjectState | None) -> None:
             height=110,
             help="后续Action Plan必须逐项说明与该战略意图的关系。",
         )
-        decision_context = st.text_area(
-            "需要支持的业务决策（可选）",
-            value=project.decision_context or "",
-            placeholder="仅做行业全景或市场研究时可以留空。",
-            height=90,
-        )
         output_language = st.selectbox(
             "输出语言",
             ["简体中文", "English", "中英双语"],
@@ -132,7 +126,7 @@ def render(project: ProjectState | None) -> None:
                         "target_company": target_company or None,
                         "company_strategy_enabled": company_strategy_enabled,
                         "company_strategy_objective": company_strategy_objective or None,
-                        "decision_context": decision_context or None,
+                        "decision_context": None,
                         "research_objective": research_objective,
                         "output_language": output_language,
                         "research_brief_artifact": None,
@@ -325,5 +319,5 @@ def render(project: ProjectState | None) -> None:
                 )
                 set_project(st.session_state, updated)
                 if confirm_brief:
-                    st.session_state[ACTIVE_PAGE_KEY] = "workflow"
-                st.rerun()
+                    queue_page_navigation(st.session_state, "workflow")
+                    st.rerun()

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import pytest
+from pptx import Presentation
+from io import BytesIO
 from streamlit.testing.v1 import AppTest
 
 from src.models.enterprise import (
@@ -151,6 +153,24 @@ def test_text_and_csv_uploads_are_extracted_without_model_calls() -> None:
     assert item.input_method == "file"
     assert item.file_sha256
     assert item.review_status == EnterpriseReviewStatus.NEEDS_REVIEW
+
+
+def test_powerpoint_upload_is_extracted_without_model_calls() -> None:
+    presentation = Presentation()
+    slide = presentation.slides.add_slide(presentation.slide_layouts[1])
+    slide.shapes.title.text = "企业战略输入"
+    slide.placeholders[1].text = "渠道反馈与客户需求"
+    buffer = BytesIO()
+    presentation.save(buffer)
+
+    text = extract_document_text(
+        "strategy.pptx",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        buffer.getvalue(),
+    )
+
+    assert "企业战略输入" in text
+    assert "渠道反馈与客户需求" in text
 
 
 def test_enterprise_sensing_page_renders_for_case_project() -> None:

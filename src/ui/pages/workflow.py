@@ -11,7 +11,7 @@ from src.config import ConfigurationError
 from src.providers.base import ProviderError
 from src.services.research_planning import SOPComplianceError
 from src.state.project import ProjectState, WORKFLOW_STEPS, WorkflowStatus
-from src.state.session import ACTIVE_PAGE_KEY, set_project
+from src.state.session import queue_page_navigation, set_project
 from src.ui.agent_services import research_planning_service
 from src.ui.components import (
     page_header,
@@ -55,13 +55,13 @@ def render(project: ProjectState | None) -> None:
     if brief is None:
         st.warning("请先生成并确认AI Research Brief，再制定研究计划。")
         if st.button("返回 Research Brief"):
-            st.session_state[ACTIVE_PAGE_KEY] = "research_brief"
+            queue_page_navigation(st.session_state, "research_brief")
             st.rerun()
         return
     if not brief.human_confirmed:
         st.warning("Research Brief正在等待人工确认。未经确认不能生成研究计划。")
         if st.button("前往确认 Research Brief"):
-            st.session_state[ACTIVE_PAGE_KEY] = "research_brief"
+            queue_page_navigation(st.session_state, "research_brief")
             st.rerun()
         return
 

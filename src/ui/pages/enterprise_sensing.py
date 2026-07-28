@@ -25,7 +25,7 @@ from src.services.enterprise_sensing import (
     upsert_enterprise_entry,
 )
 from src.state.project import ProjectState, WorkflowStatus
-from src.state.session import ACTIVE_PAGE_KEY, set_project
+from src.state.session import queue_page_navigation, set_project
 from src.ui.components import badge, information_card, page_header, require_project
 
 
@@ -89,25 +89,17 @@ def render(project: ProjectState | None) -> None:
     page_header(
         "03 · Enterprise Sensing",
         "接入企业的一手感知系统",
-        "通用行业报告无需上传企业资料；Company Scorecard和Action Plan必须同时具备明确战略意图与经人工确认的一手企业资料。",
+        "企业战略研究必须先接入并确认一手企业资料，之后才进入行业研究、公司评分与行动计划。",
     )
     if not require_project(project):
         return
     assert project is not None
 
-    pathway_cols = st.columns(2)
-    with pathway_cols[0]:
-        information_card(
-            "通用行业研究",
-            "无需企业资料，可输出行业现状、竞争格局、驱动因素、趋势与通用报告。",
-            value="General Report",
-        )
-    with pathway_cols[1]:
-        information_card(
-            "企业战略研究",
-            "目标企业 + 战略意图 + 已确认企业资料，才可进入公司评分与Action Plan。",
-            value="Customized Report",
-        )
+    information_card(
+        "企业战略研究",
+        "目标企业 + 战略意图 + 已确认企业资料，才可开始后续行业研究并进入公司评分与Action Plan。",
+        value="Enterprise Strategy Path",
+    )
 
     if project.company_strategy_enabled:
         st.markdown(
@@ -192,11 +184,11 @@ def render(project: ProjectState | None) -> None:
                 st.rerun()
 
     st.subheader("B. 上传脱敏企业文件")
-    st.caption("支持 TXT、Markdown、CSV、PDF、DOCX、XLSX；单文件不超过5MB。公开演示请勿上传真实机密。")
+    st.caption("支持 Word（DOCX）、Excel（XLSX）、PowerPoint（PPTX）、PDF、TXT、Markdown和CSV；单文件不超过5MB。公开演示请勿上传真实机密。")
     with st.form("enterprise_file_entry", border=True):
         uploaded = st.file_uploader(
             "选择文件",
-            type=["txt", "md", "csv", "pdf", "docx", "xlsx"],
+            type=["txt", "md", "csv", "pdf", "docx", "xlsx", "pptx"],
         )
         file_owner = st.text_input("文件来源角色/责任人", placeholder="例如：产品负责人")
         file_relevance = st.text_area(
@@ -354,7 +346,7 @@ def render(project: ProjectState | None) -> None:
     if not reasons:
         st.success("企业战略资格已通过。趋势与情景批准后，可进入Company Scorecard。")
         if st.button("前往 Company Scorecard", width="stretch"):
-            st.session_state[ACTIVE_PAGE_KEY] = "company_scorecard"
+            queue_page_navigation(st.session_state, "company_scorecard")
             st.rerun()
     else:
         st.warning("Company Scorecard / Action Plan仍锁定：\n\n" + "\n\n".join(f"- {reason}" for reason in reasons))

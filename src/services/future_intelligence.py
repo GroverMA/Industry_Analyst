@@ -70,7 +70,7 @@ INDICATOR_CONTRACT = {
 TREND_CONTRACT = {
     "trend_id": "TRD-01",
     "title": "string",
-    "category": "technology_product|competitive_landscape|business_model|customer_demand|policy_capital_value_chain",
+    "category": "technology_product|competitive_landscape|business_model|customer_demand|policy_capital_value_chain|cross_cutting",
     "forecast_horizon": "string",
     "forecast_year_end": 2028,
     "forecast_statement": "forward-looking statement",
@@ -259,6 +259,7 @@ class FutureIntelligenceService:
             payload = deepcopy(self._unwrap(payload))
             try:
                 payload["forecast_mode"] = "general"
+                self._normalize_trend_categories(payload)
                 self._sanitize_references(payload, evidence_ids, finding_ids)
                 self._validate_payload(
                     payload,
@@ -320,6 +321,97 @@ class FutureIntelligenceService:
     def _unwrap(payload: dict[str, Any]) -> dict[str, Any]:
         nested = payload.get("future_intelligence")
         return nested if isinstance(nested, dict) else payload
+
+    @staticmethod
+    def _normalize_trend_categories(payload: dict[str, Any]) -> None:
+        """Map natural-language category variants onto the governed taxonomy.
+
+        Category is descriptive metadata rather than evidence.  Rejecting an
+        otherwise grounded forecast because a model wrote ``competition`` or
+        ``market_structure`` instead of ``competitive_landscape`` made the
+        pipeline brittle without improving research quality.  Unknown but
+        genuinely multi-factor trends are retained as ``cross_cutting``; all
+        evidence, mechanism, scenario and falsification gates still apply.
+        """
+
+        aliases = {
+            "technology": "technology_product",
+            "technology_and_product": "technology_product",
+            "technology/product": "technology_product",
+            "product": "technology_product",
+            "tech_product": "technology_product",
+            "技术": "technology_product",
+            "技术产品": "technology_product",
+            "competition": "competitive_landscape",
+            "competitive": "competitive_landscape",
+            "competitive_dynamics": "competitive_landscape",
+            "market_structure": "competitive_landscape",
+            "competition_landscape": "competitive_landscape",
+            "竞争": "competitive_landscape",
+            "竞争格局": "competitive_landscape",
+            "business": "business_model",
+            "commercial_model": "business_model",
+            "commercialization": "business_model",
+            "channel": "business_model",
+            "商业模式": "business_model",
+            "商业模式与渠道": "business_model",
+            "customer": "customer_demand",
+            "demand": "customer_demand",
+            "end_user_demand": "customer_demand",
+            "customer_behavior": "customer_demand",
+            "客户需求": "customer_demand",
+            "policy": "policy_capital_value_chain",
+            "regulation": "policy_capital_value_chain",
+            "capital": "policy_capital_value_chain",
+            "supply_chain": "policy_capital_value_chain",
+            "value_chain": "policy_capital_value_chain",
+            "policy_regulation": "policy_capital_value_chain",
+            "政策": "policy_capital_value_chain",
+            "政策监管": "policy_capital_value_chain",
+            "产业链": "policy_capital_value_chain",
+            "cross-cutting": "cross_cutting",
+            "multi_factor": "cross_cutting",
+            "multifactor": "cross_cutting",
+            "综合": "cross_cutting",
+        }
+        valid = {item.value for item in TrendCategory}
+        gaps = payload.setdefault("forecast_gaps", [])
+        if not isinstance(gaps, list):
+            gaps = []
+            payload["forecast_gaps"] = gaps
+        for trend in payload.get("trends") or []:
+            if not isinstance(trend, dict):
+                continue
+            raw = str(trend.get("category") or "").strip().lower()
+            normalized = raw.replace(" ", "_").replace("-", "_")
+            category = aliases.get(raw) or aliases.get(normalized) or normalized
+            if category not in valid:
+                searchable = " ".join(
+                    str(trend.get(key) or "")
+                    for key in (
+                        "title",
+                        "forecast_statement",
+                        "competition_impact",
+                        "business_model_impact",
+                        "customer_demand_impact",
+                    )
+                ).lower()
+                keyword_categories = (
+                    ("technology_product", ("技术", "产品", "technology", "product")),
+                    ("competitive_landscape", ("竞争", "格局", "competition", "player")),
+                    ("business_model", ("商业模式", "渠道", "business model", "channel")),
+                    ("customer_demand", ("客户", "需求", "customer", "demand")),
+                    ("policy_capital_value_chain", ("政策", "监管", "资本", "供应链", "policy", "regulation")),
+                )
+                matches = [
+                    name for name, keywords in keyword_categories
+                    if any(keyword in searchable for keyword in keywords)
+                ]
+                category = matches[0] if len(matches) == 1 else "cross_cutting"
+                note = f"趋势“{trend.get('title') or '未命名'}”的原始分类“{raw or '空值'}”已按语义归入{category}"
+                if note not in gaps:
+                    gaps.append(note)
+            trend["category"] = category
 
     @staticmethod
     def _sanitize_references(

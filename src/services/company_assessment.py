@@ -200,7 +200,6 @@ class CompanyAssessmentService:
                 content=(
                     f"目标企业：{project.target_company}\n"
                     f"企业战略目标：{project.company_strategy_objective}\n"
-                    f"业务决策：{project.decision_context or '未指定'}\n"
                     f"必须输出六个dimension_id：{', '.join(DIMENSIONS)}。\n\n"
                     f"已批准外部Evidence：{json.dumps(evidence_payload, ensure_ascii=False)}\n\n"
                     f"已批准Enterprise Evidence：{json.dumps(enterprise_payload, ensure_ascii=False)}\n\n"

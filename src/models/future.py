@@ -23,6 +23,7 @@ class TrendCategory(StrEnum):
     BUSINESS_MODEL = "business_model"
     CUSTOMER_DEMAND = "customer_demand"
     POLICY_CAPITAL_VALUE_CHAIN = "policy_capital_value_chain"
+    CROSS_CUTTING = "cross_cutting"
 
 
 class PlayerMoveStatus(StrEnum):

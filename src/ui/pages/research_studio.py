@@ -61,7 +61,7 @@ from src.state.project import (
     WorkspaceMode,
     rewind_to_previous_review_gate,
 )
-from src.state.session import ACTIVE_PAGE_KEY, set_project
+from src.state.session import queue_page_navigation, set_project
 from src.ui.agent_services import (
     evidence_collection_service,
     future_intelligence_service,
@@ -362,7 +362,7 @@ def _pipeline_flags(project: ProjectState) -> list[tuple[str, bool]]:
         and project.future_intelligence_artifact
         and project.future_intelligence_artifact.human_confirmed
     )
-    flags = [
+    shared_flags = [
         ("Prompt Analysis", project.research_brief_artifact is not None),
         ("Gate 0 · Scope", bool(project.research_brief_artifact and project.research_brief_artifact.human_confirmed)),
         ("Web Research", evidence_complete),
@@ -370,17 +370,17 @@ def _pipeline_flags(project: ProjectState) -> list[tuple[str, bool]]:
         ("Industry Analysis", project.industry_analysis_artifact is not None),
         ("Future Intelligence", project.future_intelligence_artifact is not None),
         ("Gate 2 · Content", content_confirmed),
-        ("General Report", project.general_report_artifact is not None),
     ]
     if project.company_strategy_enabled:
-        flags.extend(
-            [
-                ("Company Scorecard", bool(project.company_scorecard_artifact and project.company_scorecard_artifact.human_confirmed)),
-                ("Action Plan", bool(project.action_plan_artifact and project.action_plan_artifact.human_confirmed)),
-                ("Enterprise Report", project.enterprise_decision_report_artifact is not None),
-            ]
-        )
-    return flags
+        sensing = project.enterprise_sensing_artifact
+        return [
+            ("Enterprise Sensing", bool(sensing and sensing.human_confirmed)),
+            *shared_flags,
+            ("Company Scorecard", bool(project.company_scorecard_artifact and project.company_scorecard_artifact.human_confirmed)),
+            ("Action Plan", bool(project.action_plan_artifact and project.action_plan_artifact.human_confirmed)),
+            ("Enterprise Report", project.enterprise_decision_report_artifact is not None),
+        ]
+    return [*shared_flags, ("General Report", project.general_report_artifact is not None)]
 
 
 def _render_progress(project: ProjectState) -> None:
@@ -458,7 +458,7 @@ def _render_rewind_control(project: ProjectState) -> None:
 def _render_advanced_context(project: ProjectState) -> None:
     st.markdown("### 高级分析师工作台 · 企业定制层")
     st.caption(
-        "高级模式沿用同一Research Brief、Research Plan、Evidence Matrix和三道审核；这里增加企业目标与一手感知数据，供后续Scorecard和Action Plan使用。"
+        "企业资料与战略意图先完成确认，再沿用同一Research Brief、Research Plan、Evidence Matrix和三道审核，最后进入Scorecard和Action Plan。"
     )
     with st.expander("统一 Research Brief 与 Research Plan", expanded=False):
         brief = project.research_brief_artifact
@@ -477,26 +477,19 @@ def _render_advanced_context(project: ProjectState) -> None:
 
     with st.form("studio_enterprise_strategy", border=True):
         st.markdown("#### 企业目标与战略意图")
-        enabled = st.toggle(
-            "启用企业定制分析（Company Scorecard + Action Plan）",
-            value=project.company_strategy_enabled,
-        )
+        st.markdown("**企业战略决策支持：已启用**")
+        enabled = True
         target_company = st.text_input("目标企业", value=project.target_company or "")
         strategy = st.text_area(
-            "企业战略目标",
+            "企业战略意图",
             value=project.company_strategy_objective or "",
             placeholder="例如：未来三年进入高增长细分市场，同时保持核心业务现金流稳定。",
             height=100,
         )
-        decision = st.text_area(
-            "需要支持的企业决策（可选）",
-            value=project.decision_context or "",
-            height=80,
-        )
         save_strategy = st.form_submit_button("保存企业目标并同步后续模块", width="stretch")
     if save_strategy:
         if enabled and (not target_company.strip() or not strategy.strip()):
-            st.error("启用企业定制分析时，请填写目标企业和企业战略目标。")
+            st.error("启用企业战略决策支持时，请填写目标企业和企业战略意图。")
         else:
             strategy_changed = (
                 enabled != project.company_strategy_enabled
@@ -516,7 +509,7 @@ def _render_advanced_context(project: ProjectState) -> None:
                     "company_strategy_enabled": enabled,
                     "target_company": target_company or None,
                     "company_strategy_objective": strategy or None,
-                    "decision_context": decision or None,
+                    "decision_context": None,
                     "industry_analysis_artifact": (
                         None if strategy_changed else project.industry_analysis_artifact
                     ),
@@ -550,7 +543,7 @@ def _render_advanced_context(project: ProjectState) -> None:
     cols = st.columns(5)
     cols[0].metric("企业一手资料", len(artifact.entries) if artifact else 0)
     cols[1].metric("已接受资料", accepted)
-    cols[2].metric("Enterprise Sensing", "已确认" if artifact and artifact.human_confirmed else "可选/待确认")
+    cols[2].metric("Enterprise Sensing", "已确认" if artifact and artifact.human_confirmed else "必填/待确认")
     cols[3].metric(
         "Company Scorecard",
         "已确认" if project.company_scorecard_artifact and project.company_scorecard_artifact.human_confirmed else "待完成",
@@ -565,7 +558,7 @@ def _render_advanced_context(project: ProjectState) -> None:
             observation_title = st.text_input("观察标题", placeholder="例如：渠道反馈显示客户更重视一体化交付")
             observation_content = st.text_area("一手观察内容", height=110)
             observation_owner = st.text_input("来源角色/责任人", placeholder="例如：华东区销售负责人")
-            observation_relevance = st.text_area("与企业战略目标的关系", height=80)
+            observation_relevance = st.text_area("与企业战略意图的关系", height=80)
             add_observation = st.form_submit_button("加入Enterprise Sensing待审核区", width="stretch")
         if add_observation:
             try:
@@ -599,23 +592,23 @@ def _render_advanced_context(project: ProjectState) -> None:
                 st.rerun()
     nav_a, nav_b, nav_c = st.columns(3)
     if nav_a.button("接入或审核企业一手数据", width="stretch"):
-        st.session_state[ACTIVE_PAGE_KEY] = "enterprise_sensing"
+        queue_page_navigation(st.session_state, "enterprise_sensing")
         st.rerun()
     if nav_b.button("查看 Company Scorecard 条件", width="stretch"):
-        st.session_state[ACTIVE_PAGE_KEY] = "company_scorecard"
+        queue_page_navigation(st.session_state, "company_scorecard")
         st.rerun()
     if nav_c.button("查看 Action Plan 条件", width="stretch"):
-        st.session_state[ACTIVE_PAGE_KEY] = "action_plan"
+        queue_page_navigation(st.session_state, "action_plan")
         st.rerun()
 
     if project.company_strategy_enabled:
         reasons = company_strategy_gate_reasons(project)
         if reasons:
-            st.info("通用行业报告不受影响；企业评分与行动计划仍需补充：" + "；".join(reasons))
+            st.info("企业战略研究尚未开始：请先完成企业一手资料输入与确认。" + "；".join(reasons))
         else:
             st.success("企业目标与一手数据资格已通过；完成行业趋势审核后即可进入Company Scorecard。")
     else:
-        st.info("当前仍可完成通用行业报告。启用企业定制分析后，企业输入才会进入Scorecard和Action Plan。")
+        st.info("请从首页创建企业战略研究项目，以启用企业资料、Scorecard和Action Plan流程。")
 
 
 def _run_task(project: ProjectState, task_id: str, query: str | None = None):
@@ -1347,10 +1340,10 @@ def _render_report(project: ProjectState) -> None:
                 + "；".join(reasons)
             )
             if st.button("补充或确认 Enterprise Sensing", width="stretch"):
-                st.session_state[ACTIVE_PAGE_KEY] = "enterprise_sensing"
+                queue_page_navigation(st.session_state, "enterprise_sensing")
                 st.rerun()
         elif st.button("进入 Company Scorecard", type="primary", width="stretch"):
-            st.session_state[ACTIVE_PAGE_KEY] = "company_scorecard"
+            queue_page_navigation(st.session_state, "company_scorecard")
             st.rerun()
 
 
@@ -1364,28 +1357,40 @@ def render(project: ProjectState | None) -> None:
         return
     assert project is not None
 
-    selected_mode = st.segmented_control(
-        "工作模式",
-        list(WorkspaceMode),
-        default=project.workspace_mode,
-        format_func=MODE_LABELS.get,
-        width="stretch",
-    )
-    if selected_mode is not None and selected_mode != project.workspace_mode:
-        updated = project.model_copy(
-            update={"workspace_mode": selected_mode, "updated_at": datetime.now(UTC)}
+    if project.company_strategy_enabled:
+        advanced = True
+        if project.workspace_mode != WorkspaceMode.ANALYST_WORKSPACE:
+            project = project.model_copy(
+                update={"workspace_mode": WorkspaceMode.ANALYST_WORKSPACE, "updated_at": datetime.now(UTC)}
+            )
+            _save(project)
+        st.markdown("**工作模式：高级分析师工作台（企业战略项目）**")
+    else:
+        selected_mode = st.segmented_control(
+            "工作模式",
+            list(WorkspaceMode),
+            default=project.workspace_mode,
+            format_func=MODE_LABELS.get,
+            width="stretch",
         )
-        _save(updated)
-        st.rerun()
-    advanced = project.workspace_mode == WorkspaceMode.ANALYST_WORKSPACE
+        if selected_mode is not None and selected_mode != project.workspace_mode:
+            updated = project.model_copy(
+                update={"workspace_mode": selected_mode, "updated_at": datetime.now(UTC)}
+            )
+            _save(updated)
+            st.rerun()
+        advanced = project.workspace_mode == WorkspaceMode.ANALYST_WORKSPACE
 
     if advanced:
-        st.info("高级工作台已启用：通用研究主流程不会改变；企业目标与一手数据在同一页面联动Scorecard和Action Plan。")
+        st.info("高级工作台已启用：先确认企业战略意图和一手资料，再执行行业研究，并将结果联动至Company Scorecard和Action Plan。")
         _render_advanced_context(project)
     else:
         st.info("快速通用报告：依次确认市场口径、网页证据和报告内容，其他步骤自动衔接。")
 
     _render_progress(project)
+    if project.company_strategy_enabled and company_strategy_gate_reasons(project):
+        st.warning("企业战略研究的前置资料尚未通过确认。请先点击上方“接入或审核企业一手数据”；完成后将从本页继续研究，进度不会丢失。")
+        return
     rewind_notice = st.session_state.pop("studio_rewind_notice", None)
     if rewind_notice:
         st.success(rewind_notice)
@@ -1438,7 +1443,12 @@ def render(project: ProjectState | None) -> None:
         ):
             _render_gate_two(project, advanced)
         elif project.general_report_artifact is None:
-            if st.button("生成通用行业报告", type="primary", width="stretch"):
+            report_label = (
+                "完成行业研究底稿并进入 Company Scorecard"
+                if project.company_strategy_enabled
+                else "生成通用行业报告"
+            )
+            if st.button(report_label, type="primary", width="stretch"):
                 try:
                     with st.spinner("正在逐题检查原始Prompt覆盖情况并生成报告…"):
                         report = report_generation_service().generate(project)
@@ -1456,6 +1466,14 @@ def render(project: ProjectState | None) -> None:
                         }
                     )
                     _save(updated)
+                    if project.company_strategy_enabled:
+                        queue_page_navigation(st.session_state, "company_scorecard")
                     st.rerun()
         else:
-            _render_report(project)
+            if project.company_strategy_enabled:
+                st.success("行业分析、未来趋势与内部行业底稿已完成，可以进入Company Scorecard。")
+                if st.button("进入 Company Scorecard", type="primary", width="stretch"):
+                    queue_page_navigation(st.session_state, "company_scorecard")
+                    st.rerun()
+            else:
+                _render_report(project)

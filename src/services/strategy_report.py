@@ -50,7 +50,6 @@ def _generate_enterprise_decision_report_legacy(project: ProjectState) -> Enterp
         "",
         f"- **目标企业：** {project.target_company}",
         f"- **战略意图：** {project.company_strategy_objective}",
-        f"- **业务决策：** {project.decision_context or '未指定单一业务决策'}",
         f"- **公司综合得分：** {scorecard.weighted_score if scorecard.weighted_score is not None else '证据覆盖不足，未计算'}",
         f"- **已评分权重覆盖：** {scorecard.scored_weight:.0%}",
         "",
@@ -191,7 +190,6 @@ def generate_enterprise_decision_report(project: ProjectState) -> EnterpriseDeci
         _paragraph(
             f"本报告面向{project.target_company}形成企业层面的决策支持",
             f"企业当前战略意图为{project.company_strategy_objective}",
-            f"需要支持的业务决策为{project.decision_context or '围绕既定战略意图开展方向判断与资源配置'}",
             f"公司综合得分为{weighted_score}，已评分权重覆盖率为{scorecard.scored_weight:.0%}",
             scorecard.overall_assessment,
         ),
