@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib
-import inspect
 
 import streamlit as st
 
@@ -20,8 +19,8 @@ from src.state.session import (
 )
 from src.ui.components import render_project_strip
 import src.ui.navigation as navigation
-from src.ui.pages import PAGE_RENDERERS
-from src.ui.theme import apply_theme
+import src.ui.pages as pages_registry
+import src.ui.theme as theme
 
 
 # Streamlit may retain an older imported module while hot-reloading ``app.py``.
@@ -47,7 +46,34 @@ st.set_page_config(
     # narrow/mobile viewports so the research form remains immediately usable.
     initial_sidebar_state="auto",
 )
-apply_theme()
+
+
+RUNTIME_RELEASE_KEY = "industry_analyst_runtime_release"
+RUNTIME_RELEASE_ID = "future-intelligence-controls-v1"
+
+# Community Cloud updates the checkout without always restarting the Python
+# process. Refresh the modules changed by this release once per browser session
+# so an existing app instance cannot keep serving the previous navigation,
+# research workflow, forecasting service, or CSS after GitHub has updated.
+if st.session_state.get(RUNTIME_RELEASE_KEY) != RUNTIME_RELEASE_ID:
+    navigation = importlib.reload(navigation)
+    future_module = importlib.import_module("src.services.future_intelligence")
+    importlib.reload(future_module)
+    agent_services_module = importlib.import_module("src.ui.agent_services")
+    importlib.reload(agent_services_module)
+    research_studio_module = importlib.import_module("src.ui.pages.research_studio")
+    research_studio_module = importlib.reload(research_studio_module)
+    trend_forecast_module = importlib.import_module("src.ui.pages.trend_forecast")
+    trend_forecast_module = importlib.reload(trend_forecast_module)
+    pages_registry.PAGE_RENDERERS["research_studio"] = research_studio_module.render
+    pages_registry.PAGE_RENDERERS["trend_forecast"] = trend_forecast_module.render
+    theme = importlib.reload(theme)
+    st.session_state[RUNTIME_RELEASE_KEY] = RUNTIME_RELEASE_ID
+
+PAGE_RENDERERS = pages_registry.PAGE_RENDERERS
+
+
+theme.apply_theme()
 initialize_session(st.session_state)
 
 project = get_project(st.session_state)
@@ -83,14 +109,6 @@ project = get_project(st.session_state)
 requested_page = st.session_state.pop(NAVIGATION_REQUEST_KEY, None)
 if requested_page in VALID_HISTORY_PAGES:
     st.session_state[ACTIVE_PAGE_KEY] = requested_page
-
-# Streamlit Community Cloud can hot-reload ``app.py`` while retaining an older
-# imported module in the running process.  The history release changed the
-# sidebar contract from one argument to two, so refresh that module only when a
-# stale one-argument implementation is still cached.  A normal cold start never
-# enters this branch.
-if len(inspect.signature(navigation.render_sidebar).parameters) < 2:
-    navigation = importlib.reload(navigation)
 
 active_page = navigation.render_sidebar(
     project,

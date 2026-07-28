@@ -25,6 +25,7 @@ from src.models.future import (
 )
 from src.models.research import MethodologyTrace
 from src.providers.base import ChatMessage, ModelResponse, ProviderError
+from src.services.errors import FutureIntelligenceError
 from src.state.project import ProjectState
 
 
@@ -35,10 +36,6 @@ class StructuredModel(Protocol):
         *,
         enable_thinking: bool = False,
     ) -> tuple[dict[str, Any], ModelResponse]: ...
-
-
-class FutureIntelligenceError(ValueError):
-    """Raised when a forecast violates evidence or scenario boundaries."""
 
 
 SIGNAL_CONTRACT = {
