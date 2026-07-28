@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import os
 
 import streamlit as st
 
@@ -49,13 +50,52 @@ st.set_page_config(
 
 
 RUNTIME_RELEASE_KEY = "industry_analyst_runtime_release"
-RUNTIME_RELEASE_ID = "enterprise-strategy-pipeline-v2"
+RUNTIME_RELEASE_ID = "formal-report-and-enterprise-inputs-v3"
 
 # Community Cloud updates the checkout without always restarting the Python
 # process. Refresh the modules changed by this release once per browser session
 # so an existing app instance cannot keep serving the previous navigation,
 # research workflow, forecasting service, or CSS after GitHub has updated.
-if st.session_state.get(RUNTIME_RELEASE_KEY) != RUNTIME_RELEASE_ID:
+if (
+    st.session_state.get(RUNTIME_RELEASE_KEY) != RUNTIME_RELEASE_ID
+    and not os.environ.get("PYTEST_CURRENT_TEST")
+):
+    # Reload model/state dependencies before pages.  Community Cloud can update
+    # the checkout while keeping the Python worker alive; in that situation an
+    # older ``src.models.enterprise`` module would not yet contain newly added
+    # enums and the enterprise page would fail during import.
+    enterprise_model_module = importlib.reload(
+        importlib.import_module("src.models.enterprise")
+    )
+    project_state_module = importlib.reload(
+        importlib.import_module("src.state.project")
+    )
+    session_module = importlib.reload(importlib.import_module("src.state.session"))
+    ProjectState = project_state_module.ProjectState
+    ACTIVE_PAGE_KEY = session_module.ACTIVE_PAGE_KEY
+    NAVIGATION_REQUEST_KEY = session_module.NAVIGATION_REQUEST_KEY
+    get_project = session_module.get_project
+    initialize_session = session_module.initialize_session
+    set_project = session_module.set_project
+
+    enterprise_service_module = importlib.reload(
+        importlib.import_module("src.services.enterprise_sensing")
+    )
+    company_assessment_service_module = importlib.reload(
+        importlib.import_module("src.services.company_assessment")
+    )
+    action_planning_service_module = importlib.reload(
+        importlib.import_module("src.services.action_planning")
+    )
+    report_generation_service_module = importlib.reload(
+        importlib.import_module("src.services.report_generation")
+    )
+    report_export_service_module = importlib.reload(
+        importlib.import_module("src.services.report_export")
+    )
+    strategy_report_service_module = importlib.reload(
+        importlib.import_module("src.services.strategy_report")
+    )
     navigation = importlib.reload(navigation)
     future_module = importlib.import_module("src.services.future_intelligence")
     importlib.reload(future_module)
