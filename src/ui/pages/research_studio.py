@@ -55,7 +55,12 @@ from src.services.report_export import (
     project_report_context,
 )
 from src.services.research_planning import SOPComplianceError
-from src.state.project import ProjectState, WorkflowStatus, WorkspaceMode
+from src.state.project import (
+    ProjectState,
+    WorkflowStatus,
+    WorkspaceMode,
+    rewind_to_previous_review_gate,
+)
 from src.state.session import ACTIVE_PAGE_KEY, set_project
 from src.ui.agent_services import (
     evidence_collection_service,
@@ -400,6 +405,54 @@ def _render_progress(project: ProjectState) -> None:
         unsafe_allow_html=True,
     )
     st.caption(f"研究进度：{completed}/{len(flags)} 个节点已完成")
+
+
+def _clear_stale_review_widget_state() -> None:
+    """Drop review-widget values that are invalid after a workflow rewind.
+
+    Streamlit keeps widget values across reruns.  A review decision from the
+    invalidated branch must not silently reappear when the user reaches that
+    gate again.
+    """
+
+    prefixes = (
+        "studio_gate_zero_",
+        "studio_gate_one_",
+        "studio_gate_two_",
+    )
+    for key in list(st.session_state):
+        if str(key).startswith(prefixes):
+            st.session_state.pop(key, None)
+
+
+def _render_rewind_control(project: ProjectState) -> None:
+    """Offer a safe return to the preceding human-review gate, when available."""
+
+    rewind_result = rewind_to_previous_review_gate(project)
+    if rewind_result is None:
+        return
+
+    _, impact = rewind_result
+    st.markdown(
+        '<div class="ia-rewind-guide">'
+        '<strong>需要修改前序内容？</strong>'
+        '<span>返回最近的人工审核节点后，已保存的前序资料会保留，'
+        '该节点之后不再有效的分析、趋势或报告会被清除。</span>'
+        f'<small>{impact}</small>'
+        "</div>",
+        unsafe_allow_html=True,
+    )
+    if st.button(
+        "← 返回上一审核节点",
+        key=f"studio_rewind_{project.project_id}_{project.current_step}",
+        width="stretch",
+        help="保留该审核节点之前的研究成果，清除之后的依赖产物。",
+    ):
+        rewound, message = rewind_result
+        _clear_stale_review_widget_state()
+        _save(rewound)
+        st.session_state["studio_rewind_notice"] = message
+        st.rerun()
 
 
 def _render_advanced_context(project: ProjectState) -> None:
@@ -1333,6 +1386,10 @@ def render(project: ProjectState | None) -> None:
         st.info("快速通用报告：依次确认市场口径、网页证据和报告内容，其他步骤自动衔接。")
 
     _render_progress(project)
+    rewind_notice = st.session_state.pop("studio_rewind_notice", None)
+    if rewind_notice:
+        st.success(rewind_notice)
+    _render_rewind_control(project)
     failures = st.session_state.pop("studio_pipeline_failures", [])
     if failures:
         st.warning(

@@ -248,6 +248,17 @@ def apply_theme() -> None:
         .ia-pipeline-step-done span {{
             background: var(--ia-accent); border-color: var(--ia-accent); color: #FFFFFF;
         }}
+        .ia-rewind-guide {{
+            display: grid; grid-template-columns: auto 1fr; gap: .2rem .7rem;
+            align-items: baseline; margin: .45rem 0 .55rem; padding: .72rem .85rem;
+            border: 1px solid var(--ia-border); border-radius: 10px;
+            background: rgba(255, 255, 255, .72);
+        }}
+        .ia-rewind-guide strong {{ color: var(--ia-text); font-size: .78rem; }}
+        .ia-rewind-guide span {{ color: var(--ia-muted); font-size: .76rem; line-height: 1.5; }}
+        .ia-rewind-guide small {{
+            grid-column: 2; color: var(--ia-accent); font-size: .7rem; line-height: 1.45;
+        }}
         .ia-muted {{ color: var(--ia-muted); }}
         #MainMenu, footer {{ visibility: hidden; }}
         @media (max-width: 760px) {{
@@ -255,6 +266,8 @@ def apply_theme() -> None:
             [data-testid="stSidebar"] {{ background: #FFFFFF; }}
             .ia-hero {{ padding: 1.5rem; }}
             .ia-pipeline-track {{ min-width: 820px; }}
+            .ia-rewind-guide {{ grid-template-columns: 1fr; }}
+            .ia-rewind-guide small {{ grid-column: 1; }}
         }}
         </style>
         """,

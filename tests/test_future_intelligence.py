@@ -334,6 +334,75 @@ def test_future_rejects_unknown_finding_reference() -> None:
     assert model.calls == 2
 
 
+def test_future_discards_unsupported_player_move_without_blocking_forecast() -> None:
+    project, evidence_artifact, analysis, evidence, finding = fixtures()
+    generated = payload(evidence.evidence_id, finding.finding_id)
+    generated["trends"][0]["player_moves"][0]["evidence_ids"] = ["EVD-unknown"]
+    model = FakeModel(generated)
+
+    future = FutureIntelligenceService(model, load_active_sop()).generate(
+        project, evidence_artifact, analysis
+    )
+
+    assert model.calls == 1
+    assert future.trends[0].player_moves == []
+    assert any("行动推演因无可验证证据引用而未采用" in gap for gap in future.forecast_gaps)
+
+
+def test_future_keeps_valid_part_of_mixed_nested_references() -> None:
+    project, evidence_artifact, analysis, evidence, finding = fixtures()
+    generated = payload(evidence.evidence_id, finding.finding_id)
+    generated["trends"][0]["player_moves"][0]["evidence_ids"] = [
+        "EVD-unknown",
+        evidence.evidence_id,
+        evidence.evidence_id,
+    ]
+    generated["trends"][0]["observed_signals"][0]["finding_ids"] = [
+        "FND-unknown",
+        finding.finding_id,
+    ]
+
+    future = FutureIntelligenceService(
+        FakeModel(generated), load_active_sop()
+    ).generate(project, evidence_artifact, analysis)
+
+    assert future.trends[0].player_moves[0].evidence_ids == [evidence.evidence_id]
+    assert future.trends[0].observed_signals[0].finding_ids == [finding.finding_id]
+
+
+def test_future_still_rejects_forecast_with_no_grounded_top_level_reference() -> None:
+    project, evidence_artifact, analysis, _, finding = fixtures()
+    invalid = payload("EVD-unknown", finding.finding_id)
+
+    with pytest.raises(FutureIntelligenceError, match="Evidence"):
+        FutureIntelligenceService(FakeModel(invalid), load_active_sop()).generate(
+            project, evidence_artifact, analysis
+        )
+
+
+def test_future_prompt_contains_sullivan_development_direction_rules() -> None:
+    project, evidence_artifact, analysis, evidence, finding = fixtures()
+
+    class CapturingModel(FakeModel):
+        messages = None
+
+        def complete_json(self, messages, *, enable_thinking=False):
+            self.messages = messages
+            return super().complete_json(messages, enable_thinking=enable_thinking)
+
+    model = CapturingModel(payload(evidence.evidence_id, finding.finding_id))
+    FutureIntelligenceService(model, load_active_sop()).generate(
+        project, evidence_artifact, analysis
+    )
+
+    prompt = "\n".join(message.content for message in model.messages)
+    assert "过去5至10年" in prompt
+    assert "下游需求" in prompt
+    assert "商业模式与渠道" in prompt
+    assert "玩家布局" in prompt
+    assert "结构性、周期性和一次性" in prompt
+
+
 def test_future_retries_one_invalid_json_response() -> None:
     project, evidence_artifact, analysis, evidence, finding = fixtures()
     model = InvalidJsonThenValidModel(payload(evidence.evidence_id, finding.finding_id))

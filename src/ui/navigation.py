@@ -65,70 +65,44 @@ def _run_history_action(
         command_type,
         project_id=project_id,
     )
-    if project_id == active_project_id and command_type in {
-        "archive",
-        "finish",
-        "delete",
-    }:
+    if project_id == active_project_id and command_type in {"finish", "delete"}:
         clear_project(st.session_state)
     st.rerun()
 
 
-def _render_history_management(
+def _render_history_actions(
     row: dict,
     *,
     active_project_id: str | None,
     key_prefix: str,
 ) -> None:
+    """Render a compact, row-level replacement for a native context menu.
+
+    Streamlit does not expose a reliable right-click event for sidebar rows.
+    A discoverable ellipsis popover keeps the actions attached to the project
+    without adding a full ``项目管理`` section after every record.
+    """
+
     project_id = str(row.get("project_id") or "")
     lifecycle = str(row.get("lifecycle_state") or "active")
     status_group = str(row.get("status_group") or "in_progress")
-    with st.expander("项目管理", expanded=False):
-        if lifecycle == "archived":
-            if st.button(
-                "恢复至项目列表",
-                key=f"{key_prefix}_activate_{project_id}",
-                width="stretch",
-            ):
-                _run_history_action(
-                    "activate", project_id, active_project_id=active_project_id
-                )
-        elif lifecycle == "finished":
-            if st.button(
-                "恢复为进行中",
-                key=f"{key_prefix}_activate_{project_id}",
-                width="stretch",
-            ):
-                _run_history_action(
-                    "activate", project_id, active_project_id=active_project_id
-                )
-            if st.button(
-                "存档项目",
-                key=f"{key_prefix}_archive_{project_id}",
-                width="stretch",
-            ):
-                _run_history_action(
-                    "archive", project_id, active_project_id=active_project_id
-                )
-        else:
-            if st.button(
-                "存档项目",
-                key=f"{key_prefix}_archive_{project_id}",
-                width="stretch",
-            ):
-                _run_history_action(
-                    "archive", project_id, active_project_id=active_project_id
-                )
-            if status_group != "completed" and st.button(
-                "立即结束研究",
-                key=f"{key_prefix}_finish_{project_id}",
-                width="stretch",
-            ):
-                _run_history_action(
-                    "finish", project_id, active_project_id=active_project_id
-                )
+    is_in_progress = lifecycle == "active" and status_group == "in_progress"
+    with st.popover(
+        "⋯",
+        key=f"{key_prefix}_actions_{project_id}",
+        help="项目操作",
+        width="stretch",
+    ):
+        if is_in_progress and st.button(
+            "终止研究",
+            key=f"{key_prefix}_finish_{project_id}",
+            width="stretch",
+        ):
+            _run_history_action(
+                "finish", project_id, active_project_id=active_project_id
+            )
         delete_confirmed = st.checkbox(
-            "确认永久删除该浏览器中的项目记录",
+            "确认删除此项目及其全部研究记录",
             key=f"{key_prefix}_delete_confirm_{project_id}",
         )
         if st.button(
@@ -154,19 +128,24 @@ def _history_row(
     node = str(row.get("node_label") or "Research Brief")
     is_active = project_id == active_project_id
     label = f"{name}{' · 当前' if is_active else ''}"
-    if st.button(
-        label,
-        key=f"{key_prefix}_open_{project_id}",
-        width="stretch",
-        disabled=not project_id,
-    ):
-        _open_history_project(row)
-    st.caption(f"{progress}% · {node}")
-    _render_history_management(
-        row,
-        active_project_id=active_project_id,
-        key_prefix=key_prefix,
+    project_col, action_col = st.columns(
+        [0.84, 0.16], gap="small", vertical_alignment="top"
     )
+    with project_col:
+        if st.button(
+            label,
+            key=f"{key_prefix}_open_{project_id}",
+            width="stretch",
+            disabled=not project_id,
+        ):
+            _open_history_project(row)
+        st.caption(f"{progress}% · {node}")
+    with action_col:
+        _render_history_actions(
+            row,
+            active_project_id=active_project_id,
+            key_prefix=key_prefix,
+        )
 
 
 def _filtered_projects(catalog: dict, search_text: str) -> list[dict]:
@@ -199,8 +178,11 @@ def _render_history(catalog: dict, project: ProjectState | None) -> None:
     rows = _filtered_projects(catalog, search_text)
     active_id = project.project_id if project else None
     in_progress = [row for row in rows if row.get("status_group") == "in_progress"]
-    completed = [row for row in rows if row.get("status_group") == "completed"]
-    archived = [row for row in rows if row.get("status_group") == "archived"]
+    historical = [
+        row
+        for row in rows
+        if row.get("status_group") in {"completed", "archived"}
+    ]
 
     st.markdown('<div class="ia-sidebar-section">进行中的项目</div>', unsafe_allow_html=True)
     if in_progress:
@@ -210,22 +192,11 @@ def _render_history(catalog: dict, project: ProjectState | None) -> None:
         st.caption("暂无进行中的项目")
 
     st.markdown('<div class="ia-sidebar-section">历史研究项目</div>', unsafe_allow_html=True)
-    if completed:
-        for row in completed:
-            _history_row(row, active_project_id=active_id)
+    if historical:
+        for row in historical:
+            _history_row(row, active_project_id=active_id, key_prefix="historical")
     else:
         st.caption("暂无已完成项目")
-
-    st.markdown('<div class="ia-sidebar-section">已存档项目</div>', unsafe_allow_html=True)
-    if archived:
-        for row in archived:
-            _history_row(
-                row,
-                active_project_id=active_id,
-                key_prefix="archived",
-            )
-    else:
-        st.caption("暂无存档项目")
 
 
 def _render_project_organizer(catalog: dict, project: ProjectState | None) -> None:

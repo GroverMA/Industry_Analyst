@@ -5,7 +5,11 @@ from pathlib import Path
 from streamlit.testing.v1 import AppTest
 
 from src.state.golden_case import load_golden_case
-from src.state.browser_history import HISTORY_CATALOG_KEY, build_project_record
+from src.state.browser_history import (
+    HISTORY_CATALOG_KEY,
+    HISTORY_COMMAND_KEY,
+    build_project_record,
+)
 from src.state.session import ACTIVE_PAGE_KEY, PROJECT_KEY
 
 
@@ -56,7 +60,7 @@ def test_project_home_continue_uses_queued_navigation_without_state_error() -> N
     assert app.segmented_control[0].label == "工作模式"
 
 
-def test_sidebar_exposes_project_archive_finish_and_delete_controls() -> None:
+def test_sidebar_exposes_row_level_finish_and_delete_controls() -> None:
     app_path = Path(__file__).resolve().parents[1] / "app.py"
     project = load_golden_case()
     record = build_project_record(project, "research_studio")
@@ -71,6 +75,61 @@ def test_sidebar_exposes_project_archive_finish_and_delete_controls() -> None:
 
     labels = {button.label for button in app.button}
     assert not app.exception
-    assert "存档项目" in labels
-    assert "立即结束研究" in labels
+    assert "终止研究" in labels
     assert "删除项目" in labels
+    assert "存档项目" not in labels
+    assert "立即结束研究" not in labels
+    assert not any(expander.label == "项目管理" for expander in app.expander)
+
+
+def test_sidebar_finish_queues_termination_and_clears_active_project() -> None:
+    app_path = Path(__file__).resolve().parents[1] / "app.py"
+    project = load_golden_case()
+    record = build_project_record(project, "research_studio")
+    app = AppTest.from_file(str(app_path))
+    app.session_state[PROJECT_KEY] = project.model_dump(mode="json")
+    app.session_state[ACTIVE_PAGE_KEY] = "research_studio"
+    app.session_state[HISTORY_CATALOG_KEY] = {
+        "projects": [record],
+        "folders": [],
+    }
+    app.run(timeout=10)
+
+    next(button for button in app.button if button.label == "终止研究").click().run(
+        timeout=10
+    )
+
+    assert not app.exception
+    assert app.session_state[HISTORY_COMMAND_KEY]["type"] == "finish"
+    assert app.session_state[HISTORY_COMMAND_KEY]["project_id"] == project.project_id
+    assert PROJECT_KEY not in app.session_state
+
+
+def test_sidebar_delete_requires_confirmation_and_queues_delete() -> None:
+    app_path = Path(__file__).resolve().parents[1] / "app.py"
+    project = load_golden_case()
+    record = build_project_record(project, "research_studio")
+    app = AppTest.from_file(str(app_path))
+    app.session_state[PROJECT_KEY] = project.model_dump(mode="json")
+    app.session_state[ACTIVE_PAGE_KEY] = "research_studio"
+    app.session_state[HISTORY_CATALOG_KEY] = {
+        "projects": [record],
+        "folders": [],
+    }
+    app.run(timeout=10)
+
+    delete_button = next(button for button in app.button if button.label == "删除项目")
+    assert delete_button.disabled is True
+    next(
+        checkbox
+        for checkbox in app.checkbox
+        if checkbox.label == "确认删除此项目及其全部研究记录"
+    ).check().run(timeout=10)
+    next(button for button in app.button if button.label == "删除项目").click().run(
+        timeout=10
+    )
+
+    assert not app.exception
+    assert app.session_state[HISTORY_COMMAND_KEY]["type"] == "delete"
+    assert app.session_state[HISTORY_COMMAND_KEY]["project_id"] == project.project_id
+    assert PROJECT_KEY not in app.session_state

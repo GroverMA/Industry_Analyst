@@ -9,15 +9,7 @@ import streamlit as st
 
 from pydantic import ValidationError
 
-from src.state.browser_history import (
-    HISTORY_CATALOG_KEY,
-    HISTORY_COMMAND_KEY,
-    HISTORY_RESPONSE_KEY,
-    VALID_HISTORY_PAGES,
-    normalize_catalog,
-    render_history_bridge,
-    resume_page_for_project,
-)
+import src.state.browser_history as browser_history
 from src.state.project import ProjectState
 from src.state.session import (
     ACTIVE_PAGE_KEY,
@@ -30,6 +22,21 @@ from src.ui.components import render_project_strip
 import src.ui.navigation as navigation
 from src.ui.pages import PAGE_RENDERERS
 from src.ui.theme import apply_theme
+
+
+# Streamlit may retain an older imported module while hot-reloading ``app.py``.
+# Resolve the history API through the module object so a newly added helper does
+# not fail during import before the app has a chance to refresh that module.
+if not hasattr(browser_history, "resume_page_for_project"):
+    browser_history = importlib.reload(browser_history)
+
+HISTORY_CATALOG_KEY = browser_history.HISTORY_CATALOG_KEY
+HISTORY_COMMAND_KEY = browser_history.HISTORY_COMMAND_KEY
+HISTORY_RESPONSE_KEY = browser_history.HISTORY_RESPONSE_KEY
+VALID_HISTORY_PAGES = browser_history.VALID_HISTORY_PAGES
+normalize_catalog = browser_history.normalize_catalog
+render_history_bridge = browser_history.render_history_bridge
+resume_page_for_project = browser_history.resume_page_for_project
 
 
 st.set_page_config(

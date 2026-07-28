@@ -386,3 +386,33 @@ def test_industry_analysis_workspace_renders_from_session_artifacts() -> None:
         if button.label == "确认Gate 0并开始网页研究"
     )
     assert confirm_button.disabled is False
+
+    rewind_project = studio_project.model_copy(
+        update={
+            "evidence_collection_artifact": evidence_artifact,
+            "industry_analysis_artifact": analysis,
+            "current_step": "industry_analysis",
+        }
+    )
+    rewind_app = AppTest.from_file("app.py")
+    rewind_app.session_state[PROJECT_KEY] = rewind_project.model_dump(mode="json")
+    rewind_app.session_state[ACTIVE_PAGE_KEY] = "research_studio"
+    rewind_app.session_state["studio_gate_one_truth_confirmation"] = True
+    rewind_app.session_state["studio_gate_two_confirmation"] = True
+    rewind_app.run(timeout=10)
+
+    rewind_button = next(
+        button for button in rewind_app.button
+        if button.label == "← 返回上一审核节点"
+    )
+    rewind_button.click().run(timeout=10)
+
+    assert not rewind_app.exception
+    rewound = ProjectState.model_validate(rewind_app.session_state[PROJECT_KEY])
+    assert rewound.current_step == "evidence_qa"
+    assert rewound.evidence_collection_artifact is not None
+    assert rewound.evidence_collection_artifact.human_confirmed is False
+    assert rewound.industry_analysis_artifact is None
+    assert rewind_app.session_state["studio_gate_one_truth_confirmation"] is False
+    assert "studio_gate_two_confirmation" not in rewind_app.session_state
+    assert any("已返回Gate 1证据审核" in item.value for item in rewind_app.success)

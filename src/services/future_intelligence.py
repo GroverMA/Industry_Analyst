@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from datetime import UTC, datetime
 from statistics import mean
 from typing import Any, Protocol
@@ -205,6 +206,12 @@ class FutureIntelligenceService:
                     "因果机制、关键假设、玩家可能行动、领先指标和可推翻预测的条件。玩家行动必须区分"
                     "observed、announced和inferred。没有经过统计验证的数据集，不得输出精确概率、"
                     "机器学习预测或虚假的数值精度。不得生成公司评分、资源配置建议或Action Plan。"
+                    "严格按照沙利文SOP研究发展方向：先说明过去5至10年的具体行业结果，"
+                    "并区分市场规模、销量、渗透率、价格成本、利润和价值分配；再从下游需求、"
+                    "下游应用拓展、技术与产品进步、政策与基础设施、供给与成本、商业模式与渠道"
+                    "六个方向识别发展因素。每项趋势都必须串联已观察变化、历史机制、玩家布局、"
+                    "技术成本、客户需求、政策支付和领先指标，并说明因素、传导机制、直接影响变量、"
+                    "行业结果和验证指标。区分结构性、周期性和一次性影响。"
                     "只输出合法JSON对象。\n\n"
                     + self.sop.prompt_context("future")
                 ),
@@ -220,6 +227,8 @@ class FutureIntelligenceService:
                     "形成1至8项有证据基础的趋势，以及baseline、accelerated、blocked三种情景各一次。"
                     "情景只使用low、moderate、high定性可能性，不输出百分比概率。无目标企业时所有"
                     "company_exposure必须为null。趋势必须引用至少一个Evidence ID和一个Finding ID。"
+                    "趋势要明确对竞争格局、商业模式和客户需求的影响。没有企业输入时，"
+                    "只能给出行业层的Where to Play选项和How to Win原则，不得伪装成企业建议。"
                     "如果某个常见趋势缺少证据，不要生成该趋势，应写入forecast_gaps。\n\n"
                     f"已接受Evidence：\n{json.dumps(evidence_payload, ensure_ascii=False)}\n\n"
                     f"已接受Industry Findings：\n{json.dumps(finding_payload, ensure_ascii=False)}\n\n"
@@ -247,9 +256,13 @@ class FutureIntelligenceService:
                     )
                 )
                 continue
-            payload = self._unwrap(payload)
+            # Providers occasionally return plausible forecast objects containing
+            # stale or fabricated nested citation IDs.  Work on a copy because
+            # retrying against a test/provider response must not mutate its cache.
+            payload = deepcopy(self._unwrap(payload))
             try:
                 payload["forecast_mode"] = "general"
+                self._sanitize_references(payload, evidence_ids, finding_ids)
                 self._validate_payload(
                     payload,
                     evidence_ids,
@@ -310,6 +323,103 @@ class FutureIntelligenceService:
     def _unwrap(payload: dict[str, Any]) -> dict[str, Any]:
         nested = payload.get("future_intelligence")
         return nested if isinstance(nested, dict) else payload
+
+    @staticmethod
+    def _sanitize_references(
+        payload: dict[str, Any],
+        evidence_ids: set[str],
+        finding_ids: set[str],
+    ) -> None:
+        """Remove unsupported nested citations without inventing replacements.
+
+        A trend or scenario still has to pass the normal minimum-reference checks.
+        Optional player moves and individual signals, however, are discarded when
+        their only citations are unknown.  This preserves the evidence-first
+        boundary while preventing one hallucinated nested ID from blocking an
+        otherwise grounded forecast.
+        """
+
+        gaps = payload.get("forecast_gaps")
+        if not isinstance(gaps, list):
+            gaps = []
+            payload["forecast_gaps"] = gaps
+        repair_notes: list[str] = []
+
+        def valid_refs(value: Any, allowed: set[str]) -> list[str]:
+            if not isinstance(value, list):
+                return []
+            return list(dict.fromkeys(item for item in value if item in allowed))
+
+        trends = payload.get("trends")
+        if isinstance(trends, list):
+            for trend_index, trend in enumerate(trends, start=1):
+                if not isinstance(trend, dict):
+                    continue
+                trend["evidence_ids"] = valid_refs(trend.get("evidence_ids"), evidence_ids)
+                trend["finding_ids"] = valid_refs(trend.get("finding_ids"), finding_ids)
+                trend["counter_evidence_ids"] = valid_refs(
+                    trend.get("counter_evidence_ids"), evidence_ids
+                )
+
+                kept_signals: list[dict[str, Any]] = []
+                for signal in trend.get("observed_signals", []):
+                    if not isinstance(signal, dict):
+                        continue
+                    signal["evidence_ids"] = valid_refs(
+                        signal.get("evidence_ids"), evidence_ids
+                    )
+                    signal["finding_ids"] = valid_refs(
+                        signal.get("finding_ids"), finding_ids
+                    )
+                    if signal["evidence_ids"]:
+                        kept_signals.append(signal)
+                    else:
+                        repair_notes.append(
+                            f"趋势{trend_index}有一项观测信号因无可验证证据引用而未采用"
+                        )
+                if isinstance(trend.get("observed_signals"), list):
+                    trend["observed_signals"] = kept_signals
+
+                kept_moves: list[dict[str, Any]] = []
+                for move in trend.get("player_moves", []):
+                    if not isinstance(move, dict):
+                        continue
+                    move["evidence_ids"] = valid_refs(
+                        move.get("evidence_ids"), evidence_ids
+                    )
+                    if move["evidence_ids"]:
+                        kept_moves.append(move)
+                    else:
+                        player = str(move.get("player") or "未命名玩家")
+                        repair_notes.append(
+                            f"{player}的行动推演因无可验证证据引用而未采用"
+                        )
+                if isinstance(trend.get("player_moves"), list):
+                    trend["player_moves"] = kept_moves
+
+        valid_trend_ids = {
+            trend.get("trend_id")
+            for trend in trends or []
+            if isinstance(trend, dict) and isinstance(trend.get("trend_id"), str)
+        }
+        scenarios = payload.get("scenarios")
+        if isinstance(scenarios, list):
+            for scenario in scenarios:
+                if not isinstance(scenario, dict):
+                    continue
+                scenario["evidence_ids"] = valid_refs(
+                    scenario.get("evidence_ids"), evidence_ids
+                )
+                scenario["finding_ids"] = valid_refs(
+                    scenario.get("finding_ids"), finding_ids
+                )
+                scenario["trend_ids"] = valid_refs(
+                    scenario.get("trend_ids"), valid_trend_ids
+                )
+
+        for note in repair_notes:
+            if note not in gaps:
+                gaps.append(note)
 
     @staticmethod
     def _validate_payload(
@@ -403,7 +513,7 @@ class FutureIntelligenceService:
         if not isinstance(evidence_refs, list) or not evidence_refs or not set(evidence_refs).issubset(evidence_ids):
             raise FutureIntelligenceError("预测引用了未知Evidence ID")
         if not isinstance(finding_refs, list) or (not finding_optional and not finding_refs):
-            raise FutureIntelligenceError("预测缺少Industry Finding ID")
+            raise FutureIntelligenceError("预测缺少Industry Finding ID，或原引用未知或未接受")
         if not set(finding_refs).issubset(finding_ids):
             raise FutureIntelligenceError("预测引用了未知或未接受的Finding ID")
 
