@@ -14,6 +14,7 @@ from src.models.evidence import EvidenceReviewStatus
 from src.providers.base import ProviderError
 from src.services.evidence_collection import (
     EvidenceCollectionError,
+    evidence_coverage_advisories,
     evidence_gate_reasons,
     merge_task_runs,
     review_evidence,
@@ -492,6 +493,26 @@ def render(project: ProjectState | None) -> None:
             width="stretch",
             hide_index=True,
             column_config={"来源": st.column_config.LinkColumn("来源")},
+        )
+
+    advisories = evidence_coverage_advisories(artifact, plan)
+    if advisories:
+        st.info(
+            "以下问题属于证据覆盖限制，不会阻断Evidence Matrix审批。"
+            "行业分析将按建议降级判断，并在报告中保留缺口与补数路径。"
+        )
+        st.dataframe(
+            [
+                {
+                    "任务": item["task_id"],
+                    "缺口类型": item["priority"],
+                    "相对缺失的问题": item["missing_questions"],
+                    "分析师处理建议": item["recommended_handling"],
+                }
+                for item in advisories
+            ],
+            hide_index=True,
+            width="stretch",
         )
 
     reasons = evidence_gate_reasons(artifact, plan)

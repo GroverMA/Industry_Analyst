@@ -334,9 +334,19 @@ def test_industry_analysis_workspace_renders_from_session_artifacts() -> None:
         methodology=trace,
         human_confirmed=True,
     )
+    gap_plan = plan.model_copy(
+        update={
+            "tasks": [
+                task.model_copy(
+                    update={"questions": ["当前市场如何？", "市场为什么增长？"]}
+                )
+            ]
+        }
+    )
     studio_project = project.model_copy(
         update={
             "research_brief_artifact": brief,
+            "research_plan_artifact": gap_plan,
             "evidence_collection_artifact": evidence_artifact.model_copy(
                 update={"human_confirmed": False}
             ),
@@ -351,6 +361,10 @@ def test_industry_analysis_workspace_renders_from_session_artifacts() -> None:
     assert not studio.exception
     labels = {button.label for button in studio.button}
     assert {"采用全部系统推荐", "一键全选", "全部取消"}.issubset(labels)
+    assert "执行一次补充检索（可选）" in labels
+    assert "确认Gate 1并生成行业分析与趋势" in labels
+    assert "一键补检所有遗漏问题" not in labels
+    assert any("证据缺口不会阻断研究" in item.value for item in studio.warning)
 
     gate_zero_project = project.model_copy(
         update={

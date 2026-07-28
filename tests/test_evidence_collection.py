@@ -19,6 +19,8 @@ from src.providers.search_router import RoutedCrawlResult, RoutedSearchResult
 from src.services.evidence_collection import (
     EvidenceCollectionService,
     classify_source,
+    evidence_coverage_advisories,
+    evidence_coverage_gaps,
     evidence_gate_reasons,
     review_evidence,
     upsert_task_run,
@@ -206,7 +208,7 @@ def test_quick_pipeline_authorization_allows_unconfirmed_plan_execution() -> Non
     assert run.task_id == "T01"
 
 
-def test_gate_rejects_accepted_evidence_when_one_question_is_uncovered() -> None:
+def test_gate_allows_reviewed_evidence_and_preserves_uncovered_question() -> None:
     research_plan = plan()
     task = research_plan.tasks[0].model_copy(
         update={"questions": ["市场有多大？", "市场为什么增长？"]}
@@ -223,5 +225,10 @@ def test_gate_rejects_accepted_evidence_when_one_question_is_uncovered() -> None
     )
 
     reasons = evidence_gate_reasons(accepted, research_plan)
+    gaps = evidence_coverage_gaps(accepted, research_plan)
+    advisories = evidence_coverage_advisories(accepted, research_plan)
 
-    assert any("T01-Q2" in reason for reason in reasons)
+    assert reasons == []
+    assert any("T01-Q2" in detail for detail in gaps["T01"])
+    assert advisories[0]["task_id"] == "T01"
+    assert "降低结论置信度" in advisories[0]["recommended_handling"]

@@ -643,11 +643,7 @@ def evidence_coverage_gaps(
     artifact: EvidenceCollectionArtifact | None,
     plan: ResearchPlanArtifact,
 ) -> dict[str, list[str]]:
-    """Audit whether every planned question has strong, relevant evidence.
-
-    Gate 1 must never be presented as ready when a task ran successfully but
-    still failed to answer one or more of its planned questions.
-    """
+    """Audit unanswered questions without turning them into a workflow lock."""
 
     gaps: dict[str, list[str]] = {}
     run_map = {run.task_id: run for run in artifact.task_runs} if artifact else {}
@@ -703,6 +699,59 @@ def evidence_coverage_gaps(
                 for question_id in sorted(missing_prompt_ids)
             )
     return gaps
+
+
+def evidence_coverage_advisories(
+    artifact: EvidenceCollectionArtifact | None,
+    plan: ResearchPlanArtifact,
+) -> list[dict[str, str]]:
+    """Translate retrieval gaps into analyst-style handling recommendations."""
+
+    advisories: list[dict[str, str]] = []
+    for task_id, details in evidence_coverage_gaps(artifact, plan).items():
+        combined = " ".join(details)
+        if any(
+            keyword in combined
+            for keyword in ("量化", "规模", "份额", "增速", "贡献", "价格", "利润", "支付")
+        ):
+            handling = (
+                "先以可比口径、区间或方向性证据形成定性判断；报告中不得虚构精确数字，"
+                "并把该项列为后续数据库、企业经营数据或专家访谈的补数任务。"
+            )
+        elif any(keyword in combined for keyword in ("未来", "政策", "监管", "机会", "趋势")):
+            handling = (
+                "改用情景分析，明确关键假设、触发条件与监测指标；当前只输出条件性判断，"
+                "不输出无证据支持的单一路径预测。"
+            )
+        elif any(keyword in combined for keyword in ("竞争", "商业模式", "利润", "产业链")):
+            handling = (
+                "使用已披露代表性企业或可比案例形成样本判断，明确样本边界，"
+                "避免把个别公司的做法直接外推为整个市场结论。"
+            )
+        elif any(keyword in combined for keyword in ("口径", "归入", "分类", "边界")):
+            handling = (
+                "沿用Gate 0已确认的市场定义作为暂定口径，同时把争议项列为边界假设，"
+                "并在结论中说明采用其他口径时可能产生的变化。"
+            )
+        else:
+            handling = (
+                "以现有证据形成部分回答并降低结论置信度；在报告中保留证据缺口，"
+                "同时列出建议补充的官方数据、企业披露或专家访谈来源。"
+            )
+        priority = (
+            "核心问题缺口"
+            if any("用户必答问题" in item for item in details)
+            else "一般证据缺口"
+        )
+        advisories.append(
+            {
+                "task_id": task_id,
+                "priority": priority,
+                "missing_questions": "\n".join(details),
+                "recommended_handling": handling,
+            }
+        )
+    return advisories
 
 
 def supplemental_query(
@@ -850,8 +899,21 @@ def evidence_gate_reasons(
     artifact: EvidenceCollectionArtifact | None,
     plan: ResearchPlanArtifact,
 ) -> list[str]:
+    """Return only conditions that make human evidence review impossible.
+
+    Question-level coverage gaps remain visible through
+    ``evidence_coverage_gaps`` but do not create an infinite retrieval loop.
+    Once the reviewer accepts at least one usable item, analysis may continue
+    with explicit limitations and lower-confidence conclusions.
+    """
+
     if artifact is None or artifact.research_plan_id != plan.artifact_id:
         return ["尚未建立与当前研究计划对应的证据矩阵"]
+    if any(
+        item.review_status == EvidenceReviewStatus.ACCEPTED
+        for item in artifact.evidence
+    ):
+        return []
     reasons: list[str] = []
     run_map = {run.task_id: run for run in artifact.task_runs}
     for task in plan.tasks:
@@ -866,36 +928,4 @@ def evidence_gate_reasons(
         ]
         if not accepted:
             reasons.append(f"{task.task_id} 尚无人工接受的证据")
-            continue
-        required_ids = {
-            f"{task.task_id}-Q{index}" for index in range(1, len(task.questions) + 1)
-        }
-        covered_ids = {
-            question_id
-            for item in accepted
-            for question_id in item.question_ids
-            if question_id in required_ids
-        }
-        if accepted and not any(item.question_ids for item in accepted):
-            covered_ids = required_ids
-        question_map = {
-            f"{task.task_id}-Q{index}": question
-            for index, question in enumerate(task.questions, start=1)
-        }
-        for question_id in sorted(required_ids - covered_ids):
-            reasons.append(
-                f"{question_id}：{question_map[question_id]} 尚无人工采用证据"
-            )
-
-        required_prompt_ids = set(task.prompt_question_ids)
-        covered_prompt_ids = {
-            question_id
-            for item in accepted
-            for question_id in item.prompt_question_ids
-            if question_id in required_prompt_ids
-        }
-        if accepted and not any(item.prompt_question_ids for item in accepted):
-            covered_prompt_ids = required_prompt_ids
-        for question_id in sorted(required_prompt_ids - covered_prompt_ids):
-            reasons.append(f"用户必答问题{question_id} 尚无人工采用证据")
-    return reasons
+    return reasons or ["当前没有可供人工采用的证据"]
