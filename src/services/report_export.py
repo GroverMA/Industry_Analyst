@@ -21,6 +21,7 @@ from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
 from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (
@@ -119,7 +120,7 @@ def build_report_docx(context: ReportExportContext) -> bytes:
 def build_report_pdf(context: ReportExportContext) -> bytes:
     """Build a paginated PDF without depending on LibreOffice at runtime."""
 
-    _register_pdf_font()
+    pdf_font = _register_pdf_font()
 
     stream = io.BytesIO()
     document = SimpleDocTemplate(
@@ -133,7 +134,7 @@ def build_report_pdf(context: ReportExportContext) -> bytes:
         author="Industry Analyst OS",
         subject=context.report_status,
     )
-    styles = _pdf_styles()
+    styles = _pdf_styles(pdf_font)
     story = _pdf_cover(context, styles)
     story.append(PageBreak())
     story.extend(_markdown_to_pdf(context.markdown, styles, skip_first_title=True))
@@ -148,12 +149,12 @@ def build_report_pdf(context: ReportExportContext) -> bytes:
     return stream.getvalue()
 
 
-def _register_pdf_font() -> None:
+def _register_pdf_font() -> str:
     """Embed a real CJK font so Chinese remains visible across PDF readers."""
 
     try:
         pdfmetrics.getFont(PDF_CJK_FONT)
-        return
+        return PDF_CJK_FONT
     except KeyError:
         pass
 
@@ -167,11 +168,17 @@ def _register_pdf_font() -> None:
             pdfmetrics.registerFont(TTFont(PDF_CJK_FONT, str(font_path), subfontIndex=0))
         except Exception:
             continue
-        return
-    raise RuntimeError(
-        "未找到可嵌入的中文字体。部署环境需安装 fonts-noto-cjk，"
-        "或通过 INDUSTRY_REPORT_CJK_FONT 指定字体文件。"
-    )
+        return PDF_CJK_FONT
+
+    # Streamlit Community Cloud does not guarantee a local CJK font file.
+    # ReportLab's standard CID font keeps Chinese PDF generation available
+    # without a system package or a private bundled asset.
+    fallback_name = "STSong-Light"
+    try:
+        pdfmetrics.getFont(fallback_name)
+    except KeyError:
+        pdfmetrics.registerFont(UnicodeCIDFont(fallback_name))
+    return fallback_name
 
 
 def _configure_document(document: Document, context: ReportExportContext) -> None:
@@ -501,13 +508,13 @@ def _add_left_border(paragraph, color: str) -> None:
     borders.append(left)
 
 
-def _pdf_styles():
+def _pdf_styles(font_name: str):
     base = getSampleStyleSheet()
     return {
         "body": ParagraphStyle(
             "ReportBody",
             parent=base["BodyText"],
-            fontName=PDF_CJK_FONT,
+            fontName=font_name,
             fontSize=9.5,
             leading=14.2,
             textColor=colors.HexColor(f"#{INK}"),
@@ -516,7 +523,7 @@ def _pdf_styles():
         ),
         "h1": ParagraphStyle(
             "ReportH1",
-            fontName=PDF_CJK_FONT,
+            fontName=font_name,
             fontSize=15,
             leading=20,
             textColor=colors.HexColor(f"#{ACCENT}"),
@@ -527,7 +534,7 @@ def _pdf_styles():
         ),
         "h2": ParagraphStyle(
             "ReportH2",
-            fontName=PDF_CJK_FONT,
+            fontName=font_name,
             fontSize=12.5,
             leading=17,
             textColor=colors.HexColor(f"#{ACCENT_DARK}"),
@@ -538,7 +545,7 @@ def _pdf_styles():
         ),
         "bullet": ParagraphStyle(
             "ReportBullet",
-            fontName=PDF_CJK_FONT,
+            fontName=font_name,
             fontSize=9.5,
             leading=14.2,
             leftIndent=18,
@@ -549,7 +556,7 @@ def _pdf_styles():
         ),
         "quote": ParagraphStyle(
             "ReportQuote",
-            fontName=PDF_CJK_FONT,
+            fontName=font_name,
             fontSize=9.3,
             leading=13.8,
             textColor=colors.HexColor(f"#{ACCENT_DARK}"),
@@ -557,7 +564,7 @@ def _pdf_styles():
         ),
         "cover_kicker": ParagraphStyle(
             "CoverKicker",
-            fontName=PDF_CJK_FONT,
+            fontName=font_name,
             fontSize=10,
             leading=13,
             alignment=TA_CENTER,
@@ -566,7 +573,7 @@ def _pdf_styles():
         ),
         "cover_title": ParagraphStyle(
             "CoverTitle",
-            fontName=PDF_CJK_FONT,
+            fontName=font_name,
             fontSize=25,
             leading=32,
             alignment=TA_CENTER,
@@ -576,7 +583,7 @@ def _pdf_styles():
         ),
         "cover_subtitle": ParagraphStyle(
             "CoverSubtitle",
-            fontName=PDF_CJK_FONT,
+            fontName=font_name,
             fontSize=12,
             leading=17,
             alignment=TA_CENTER,
@@ -586,7 +593,7 @@ def _pdf_styles():
         ),
         "cover_meta": ParagraphStyle(
             "CoverMeta",
-            fontName=PDF_CJK_FONT,
+            fontName=font_name,
             fontSize=9.5,
             leading=14,
             alignment=TA_CENTER,

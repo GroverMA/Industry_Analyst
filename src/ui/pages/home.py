@@ -45,12 +45,19 @@ def render(project: ProjectState | None) -> None:
             """,
             unsafe_allow_html=True,
         )
-        company_strategy_enabled = st.toggle(
-            "企业战略决策支持",
-            value=False,
-            help="关闭时仍可完成通用行业研究与趋势报告；开启后必须提供目标企业、战略意图和经确认的企业一手资料。",
-            key="new_project_company_strategy_enabled",
-        )
+        with st.container(border=True):
+            st.markdown("#### 企业战略决策支持 · 高级分析模式")
+            st.write(
+                "开启后，系统将在行业研究基础上接入企业资料，评估企业能力与战略适配度，"
+                "并继续生成 Company Scorecard 和 Action Plan。"
+            )
+            company_strategy_enabled = st.toggle(
+                "进入企业战略决策支持模式",
+                value=False,
+                help="关闭时仍可完成通用行业研究与趋势报告；开启后必须提供目标企业、战略意图和经确认的企业一手资料。",
+                key="new_project_company_strategy_enabled",
+            )
+            st.caption("适用于市场进入、增长路径、产品组合、渠道与资源配置等企业级决策。")
         if company_strategy_enabled:
             st.info(
                 "企业战略路径已启用：Action Plan将以企业战略意图为首要约束。"
@@ -165,7 +172,7 @@ def render(project: ProjectState | None) -> None:
             unsafe_allow_html=True,
         )
         with st.container(border=True):
-            st.markdown("#### 案例展示 · 中国分子诊断行业")
+            st.markdown("#### 案例展示 · 中国IVD行业")
             st.caption("Industry Pack Enabled · 高精度研究案例")
             st.write(
                 "模拟一家中国IVD企业在PCR、数字PCR、NGS和一体化方案之间进行资源配置。"

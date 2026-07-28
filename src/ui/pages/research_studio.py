@@ -552,25 +552,28 @@ def _render_advanced_context(project: ProjectState) -> None:
         "Action Plan",
         "已确认" if project.action_plan_artifact and project.action_plan_artifact.human_confirmed else "待完成",
     )
-    with st.expander("快速添加一条企业一手观察", expanded=False):
-        st.caption("这里只接受脱敏或模拟内容；文件上传、敏感级别和逐条审核可进入完整Enterprise Sensing。")
+    with st.expander("快速提交一个企业自我诊断问题", expanded=False):
+        st.caption(
+            "提交企业认为最需要改进或验证的方面；系统将其作为待验证管理假设。"
+            "多层企业文件、敏感级别和逐条审核请进入完整Enterprise Sensing。"
+        )
         with st.form("studio_enterprise_quick_entry", border=True):
-            observation_title = st.text_input("观察标题", placeholder="例如：渠道反馈显示客户更重视一体化交付")
-            observation_content = st.text_area("一手观察内容", height=110)
-            observation_owner = st.text_input("来源角色/责任人", placeholder="例如：华东区销售负责人")
-            observation_relevance = st.text_area("与企业战略意图的关系", height=80)
-            add_observation = st.form_submit_button("加入Enterprise Sensing待审核区", width="stretch")
+            observation_title = st.text_input("最需要改进或验证的方面", placeholder="例如：重点客户渗透率低于预期")
+            observation_content = st.text_area("当前表现或症状", height=110)
+            observation_owner = st.text_input("提交部门／责任人", placeholder="例如：商业运营负责人")
+            observation_relevance = st.text_area("为什么会影响企业战略意图", height=80)
+            add_observation = st.form_submit_button("提交诊断假设", width="stretch")
         if add_observation:
             try:
                 item = EnterpriseEvidenceItem(
                     title=observation_title,
-                    category=EnterpriseEvidenceCategory.MANAGEMENT_EXPERT,
-                    statement_type=EnterpriseStatementType.OBSERVATION,
+                    category=EnterpriseEvidenceCategory.SELF_DIAGNOSIS,
+                    statement_type=EnterpriseStatementType.HYPOTHESIS,
                     content=observation_content,
                     source_owner=observation_owner,
                     strategic_relevance=observation_relevance,
                     sensitivity=EnterpriseSensitivity.REDACTED_DEMO,
-                    input_method="research_studio",
+                    input_method="self_diagnosis",
                 )
             except ValidationError:
                 st.error("请填写标题、内容、来源角色和战略相关性。")
@@ -1269,7 +1272,7 @@ def _render_gate_two(project: ProjectState, advanced: bool) -> None:
             }
         )
         try:
-            with st.spinner("正在逐题检查原始Prompt覆盖情况并组织报告…"):
+            with st.spinner("正在检查研究重点覆盖情况并组织专业行业报告…"):
                 report = report_generation_service().generate(reviewed_project)
         except Exception:
             st.error("报告本轮未能完成。已审核内容均已保存，可以直接重新生成报告。")
@@ -1296,10 +1299,10 @@ def _render_report(project: ProjectState) -> None:
     cols[1].metric("采用判断", len(report.accepted_finding_ids))
     cols[2].metric("独立来源", report.source_count)
     answered = sum(item.coverage_status == "answered" for item in report.prompt_coverage)
-    cols[3].metric("Prompt覆盖", f"{answered}/{len(report.prompt_coverage)}")
+    cols[3].metric("研究重点覆盖", f"{answered}/{len(report.prompt_coverage)}")
     if report.unresolved_prompt_questions:
         st.warning(
-            "以下原始问题仍存在部分覆盖或证据缺口："
+            "以下研究重点仍存在部分覆盖或证据缺口："
             + "；".join(report.unresolved_prompt_questions)
         )
     with st.expander("预览完整报告", expanded=True):
@@ -1312,25 +1315,33 @@ def _render_report(project: ProjectState) -> None:
         report_status="经人工审核的通用行业研究报告",
         generated_at=report.generated_at,
     )
-    word_report = build_report_docx(export_context)
-    pdf_report = build_report_pdf(export_context)
     col_a, col_b = st.columns(2)
-    col_a.download_button(
-        "下载 Word 报告",
-        data=word_report,
-        file_name=f"{safe_name}.docx",
-        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        width="stretch",
-        type="primary",
-    )
-    col_b.download_button(
-        "下载 PDF 报告",
-        data=pdf_report,
-        file_name=f"{safe_name}.pdf",
-        mime="application/pdf",
-        width="stretch",
-        type="primary",
-    )
+    try:
+        word_report = build_report_docx(export_context)
+    except Exception:
+        col_a.error("Word 报告暂时无法生成，研究报告正文已保存。")
+    else:
+        col_a.download_button(
+            "下载 Word 报告",
+            data=word_report,
+            file_name=f"{safe_name}.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            width="stretch",
+            type="primary",
+        )
+    try:
+        pdf_report = build_report_pdf(export_context)
+    except Exception:
+        col_b.error("PDF 报告暂时无法生成；Word 下载不受影响。")
+    else:
+        col_b.download_button(
+            "下载 PDF 报告",
+            data=pdf_report,
+            file_name=f"{safe_name}.pdf",
+            mime="application/pdf",
+            width="stretch",
+            type="primary",
+        )
     if project.company_strategy_enabled:
         st.markdown("### 继续企业战略分析")
         reasons = company_scorecard_eligibility(project)

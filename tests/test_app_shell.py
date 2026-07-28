@@ -73,8 +73,8 @@ def test_strategy_workspace_opens_enterprise_upload_without_widget_state_error()
     ).click().run(timeout=10)
 
     assert not app.exception
-    assert any(item.value == "B. 上传脱敏企业文件" for item in app.subheader)
-    assert app.file_uploader[0].label == "选择文件"
+    assert any(item.value == "B. 分层上传脱敏企业文件" for item in app.subheader)
+    assert app.file_uploader[0].label == "选择一个或多个文件"
 
 
 def test_home_only_shows_strategy_intent_when_strategy_support_is_enabled() -> None:
@@ -85,7 +85,7 @@ def test_home_only_shows_strategy_intent_when_strategy_support_is_enabled() -> N
     assert "需要支持的业务决策（可选）" not in labels
     assert "企业战略意图（必填）" not in labels
 
-    next(toggle for toggle in app.toggle if toggle.label == "企业战略决策支持").set_value(
+    next(toggle for toggle in app.toggle if toggle.label == "进入企业战略决策支持模式").set_value(
         True
     ).run(timeout=10)
 

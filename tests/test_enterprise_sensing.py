@@ -6,6 +6,7 @@ from io import BytesIO
 from streamlit.testing.v1 import AppTest
 
 from src.models.enterprise import (
+    EnterpriseDataDimension,
     EnterpriseEvidenceCategory,
     EnterpriseEvidenceItem,
     EnterpriseReviewStatus,
@@ -148,10 +149,14 @@ def test_text_and_csv_uploads_are_extracted_without_model_calls() -> None:
         source_owner="Product lead",
         strategic_relevance="Tests product-market fit",
         sensitivity=EnterpriseSensitivity.REDACTED_DEMO,
+        data_dimension=EnterpriseDataDimension.CUSTOMER_PENETRATION,
+        reporting_period="2026Q1",
     )
 
     assert item.input_method == "file"
     assert item.file_sha256
+    assert item.data_dimension == EnterpriseDataDimension.CUSTOMER_PENETRATION
+    assert item.reporting_period == "2026Q1"
     assert item.review_status == EnterpriseReviewStatus.NEEDS_REVIEW
 
 
@@ -182,8 +187,8 @@ def test_enterprise_sensing_page_renders_for_case_project() -> None:
 
     assert not app.exception
     assert [item.value for item in app.subheader] == [
-        "A. 手动输入一手信息",
-        "B. 上传脱敏企业文件",
+        "A. 企业自我诊断问题",
+        "B. 分层上传脱敏企业文件",
         "C. 人工审核企业资料",
         "D. 权限确认与战略路径资格",
     ]

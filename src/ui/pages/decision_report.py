@@ -67,17 +67,27 @@ def render(project: ProjectState | None) -> None:
             generated_at=general.generated_at,
         )
         col_a, col_b = st.columns(2)
-        col_a.download_button(
-            "下载通用报告 Word", data=build_report_docx(general_context),
-            file_name=f"{safe_name}.docx",
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            width="stretch", type="primary",
-        )
-        col_b.download_button(
-            "下载通用报告 PDF", data=build_report_pdf(general_context),
-            file_name=f"{safe_name}.pdf", mime="application/pdf",
-            width="stretch", type="primary",
-        )
+        try:
+            word_payload = build_report_docx(general_context)
+        except Exception:
+            col_a.error("Word 报告暂时无法生成。")
+        else:
+            col_a.download_button(
+                "下载通用报告 Word", data=word_payload,
+                file_name=f"{safe_name}.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                width="stretch", type="primary",
+            )
+        try:
+            pdf_payload = build_report_pdf(general_context)
+        except Exception:
+            col_b.error("PDF 报告暂时无法生成；Word 下载不受影响。")
+        else:
+            col_b.download_button(
+                "下载通用报告 PDF", data=pdf_payload,
+                file_name=f"{safe_name}.pdf", mime="application/pdf",
+                width="stretch", type="primary",
+            )
         return
 
     st.subheader("企业决策报告")
@@ -128,7 +138,7 @@ def render(project: ProjectState | None) -> None:
                 st.rerun()
         return
 
-    st.success("企业决策报告已生成：行业底稿、公司评分和行动建议均保留追溯ID与人工审核记录。")
+    st.success("企业决策报告已生成；内部追溯关系保留在审核工作台，不进入正式交付正文。")
     with st.expander("预览企业决策报告", expanded=True):
         st.markdown(enterprise_report.markdown)
     enterprise_context = project_report_context(
@@ -139,19 +149,29 @@ def render(project: ProjectState | None) -> None:
         generated_at=enterprise_report.generated_at,
     )
     col_c, col_d = st.columns(2)
-    col_c.download_button(
-        "下载企业决策报告 Word",
-        data=build_report_docx(enterprise_context),
-        file_name=f"{safe_name}.enterprise-decision.docx",
-        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        width="stretch",
-        type="primary",
-    )
-    col_d.download_button(
-        "下载企业决策报告 PDF",
-        data=build_report_pdf(enterprise_context),
-        file_name=f"{safe_name}.enterprise-decision.pdf",
-        mime="application/pdf",
-        width="stretch",
-        type="primary",
-    )
+    try:
+        word_payload = build_report_docx(enterprise_context)
+    except Exception:
+        col_c.error("Word 报告暂时无法生成。")
+    else:
+        col_c.download_button(
+            "下载企业决策报告 Word",
+            data=word_payload,
+            file_name=f"{safe_name}.enterprise-decision.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            width="stretch",
+            type="primary",
+        )
+    try:
+        pdf_payload = build_report_pdf(enterprise_context)
+    except Exception:
+        col_d.error("PDF 报告暂时无法生成；Word 下载不受影响。")
+    else:
+        col_d.download_button(
+            "下载企业决策报告 PDF",
+            data=pdf_payload,
+            file_name=f"{safe_name}.enterprise-decision.pdf",
+            mime="application/pdf",
+            width="stretch",
+            type="primary",
+        )

@@ -8,6 +8,7 @@ import io
 from datetime import UTC, datetime
 
 from src.models.enterprise import (
+    EnterpriseDataDimension,
     EnterpriseEvidenceCategory,
     EnterpriseEvidenceItem,
     EnterpriseReviewStatus,
@@ -239,6 +240,8 @@ def enterprise_item_from_upload(
     source_owner: str,
     strategic_relevance: str,
     sensitivity: EnterpriseSensitivity,
+    data_dimension: EnterpriseDataDimension = EnterpriseDataDimension.OTHER,
+    reporting_period: str | None = None,
 ) -> EnterpriseEvidenceItem:
     if not data:
         raise EnterpriseSensingError("上传文件为空")
@@ -254,6 +257,8 @@ def enterprise_item_from_upload(
         content=text[:MAX_EXTRACTED_CHARACTERS],
         source_owner=source_owner,
         strategic_relevance=strategic_relevance,
+        data_dimension=data_dimension,
+        reporting_period=reporting_period.strip() if reporting_period and reporting_period.strip() else None,
         sensitivity=sensitivity,
         input_method="file",
         file_name=file_name,

@@ -154,6 +154,8 @@ class CompanyAssessmentService:
                 "content": item.content,
                 "source_owner": item.source_owner,
                 "strategic_relevance": item.strategic_relevance,
+                "data_dimension": item.data_dimension.value if item.data_dimension else None,
+                "reporting_period": item.reporting_period,
             }
             for item in accepted_enterprise
         ]

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from src.models.strategy import EnterpriseDecisionReportArtifact, StrategyReviewStatus
 from src.state.project import ProjectState
 
@@ -141,6 +143,7 @@ def _generate_enterprise_decision_report_legacy(project: ProjectState) -> Enterp
 
 def _sentence(value) -> str:
     text = " ".join(str(value or "").split()).strip()
+    text = re.sub(r"\b(?:EVD|FND|TRD|SCN|SRC|ENT|DIM|ACT)-[A-Za-z0-9_-]+\b", "", text)
     for symbol in ("➡", "➜", "→", "←", "👉", "👈"):
         text = text.replace(symbol, "")
     if text and text[-1] not in "。！？；.!?;":
@@ -227,12 +230,6 @@ def generate_enterprise_decision_report(project: ProjectState) -> EnterpriseDeci
         ]
     )
     for index, action in enumerate(accepted_actions, start=1):
-        traceability = (
-            f"评分维度记录为{', '.join(action.score_dimension_ids) or '未记录'}；"
-            f"公开证据记录为{', '.join(action.evidence_ids) or '未记录'}；"
-            f"企业证据记录为{', '.join(action.enterprise_evidence_ids) or '未记录'}；"
-            f"趋势记录为{', '.join(action.trend_ids) or '未记录'}"
-        )
         lines.extend(
             [
                 f"### C.{index} {action.title}",
@@ -246,7 +243,6 @@ def generate_enterprise_decision_report(project: ProjectState) -> EnterpriseDeci
                     f"主要风险包括{'、'.join(action.risks)}，对应缓解措施包括{'、'.join(action.mitigations)}",
                     f"若出现{'、'.join(action.stop_conditions)}，应停止、调整或转向该项行动",
                     f"该建议置信度为{action.confidence}%，主要不确定性为{action.uncertainty}",
-                    traceability,
                 ),
                 "",
                 "| 指标类型 | 指标名称 | 指标定义 | 目标值 | 时间要求 | 数据来源 |",
@@ -292,10 +288,16 @@ def generate_enterprise_decision_report(project: ProjectState) -> EnterpriseDeci
             general.markdown,
         ]
     )
+    markdown = "\n".join(lines)
+    markdown = re.sub(
+        r"\b(?:EVD|FND|TRD|SCN|SRC|ENT|DIM|ACT)-[A-Za-z0-9_-]+\b",
+        "",
+        markdown,
+    )
     return EnterpriseDecisionReportArtifact(
         title=f"{project.project_name} · 企业决策版",
         general_report_id=general.report_id,
         scorecard_id=scorecard.artifact_id,
         action_plan_id=action_plan.artifact_id,
-        markdown="\n".join(lines),
+        markdown=markdown,
     )

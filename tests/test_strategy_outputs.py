@@ -432,7 +432,8 @@ def test_scorecard_and_action_plan_require_human_review() -> None:
     report = generate_enterprise_decision_report(project)
     assert "公司能力评分" in report.markdown
     assert "停止、调整或转向" in report.markdown
-    assert enterprise_id in report.markdown
+    assert enterprise_id not in report.markdown
+    assert evidence_id not in report.markdown
 
 
 def test_action_plan_rejects_unknown_trace_ids() -> None:

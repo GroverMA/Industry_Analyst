@@ -14,6 +14,7 @@ from src.services.report_export import (
     build_report_pdf,
     project_report_context,
 )
+import src.services.report_export as report_export
 from src.ui.theme import apply_theme
 
 
@@ -92,6 +93,19 @@ def test_pdf_export_is_paginated_and_has_metadata() -> None:
     reader = PdfReader(io.BytesIO(payload))
     assert len(reader.pages) >= 2
     assert reader.metadata.title == "中国分子诊断行业研究报告"
+
+
+def test_pdf_export_uses_cloud_safe_cjk_fallback_without_system_font(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(report_export, "PDF_CJK_FONT", "MissingIndustryReportFont")
+    monkeypatch.setattr(report_export, "PDF_FONT_CANDIDATES", ())
+    monkeypatch.delenv("INDUSTRY_REPORT_CJK_FONT", raising=False)
+
+    payload = report_export.build_report_pdf(context())
+
+    assert payload.startswith(b"%PDF")
+    assert len(PdfReader(io.BytesIO(payload)).pages) >= 2
 
 
 def test_project_context_uses_the_projects_sop_version() -> None:

@@ -154,6 +154,8 @@ class ActionPlanningService:
                     "enterprise_evidence_id": item.enterprise_evidence_id,
                     "content": item.content,
                     "strategic_relevance": item.strategic_relevance,
+                    "data_dimension": item.data_dimension.value if item.data_dimension else None,
+                    "reporting_period": item.reporting_period,
                 }
                 for item in enterprise_items
             ],

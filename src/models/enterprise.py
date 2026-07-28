@@ -20,6 +20,21 @@ class EnterpriseEvidenceCategory(StrEnum):
     RESEARCH_DEVELOPMENT = "research_development"
     ORGANIZATION_RESOURCES = "organization_resources"
     MANAGEMENT_EXPERT = "management_expert"
+    SELF_DIAGNOSIS = "self_diagnosis"
+
+
+class EnterpriseDataDimension(StrEnum):
+    SELL_IN = "sell_in"
+    SELL_OUT = "sell_out"
+    CUSTOMER_PENETRATION = "customer_penetration"
+    INVENTORY = "inventory"
+    PRICE_MARGIN = "price_margin"
+    CHANNEL_COVERAGE = "channel_coverage"
+    PRODUCT_PORTFOLIO = "product_portfolio"
+    OPERATIONS_SUPPLY = "operations_supply"
+    FINANCIAL_RESOURCE = "financial_resource"
+    ORGANIZATION_CAPABILITY = "organization_capability"
+    OTHER = "other"
 
 
 class EnterpriseStatementType(StrEnum):
@@ -55,6 +70,8 @@ class EnterpriseEvidenceItem(BaseModel):
     source_owner: str
     observed_at: str | None = None
     strategic_relevance: str
+    data_dimension: EnterpriseDataDimension | None = None
+    reporting_period: str | None = None
     sensitivity: EnterpriseSensitivity = EnterpriseSensitivity.REDACTED_DEMO
     project_only_permission: bool = True
     input_method: str = "manual"

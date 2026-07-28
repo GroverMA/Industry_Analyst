@@ -120,9 +120,6 @@ class ReportGenerationService:
         ]
         contract = {
             "executive_summary": "完整正式段落",
-            "prompt_responses": [
-                {"question_index": 0, "paragraph": "直接回应该问题的正式段落"}
-            ],
             "module_introductions": [
                 {"module_id": "market_status", "paragraph": "该章节的判断性导语"}
             ],
@@ -145,8 +142,10 @@ class ReportGenerationService:
                     "不得新增事实、数字、公司、来源、因果关系或确定性。写作采用正式、客观、审慎的"
                     "机构研究语体：章节标题下使用完整连续段落；先陈述现象或判断，再解释作用机制、"
                     "市场影响及适用边界；预测必须使用‘预计’‘可能’‘在……条件下’等审慎表达，并"
-                    "明确反证条件。不得使用emoji、箭头、项目符号、口语、AI自述、营销口号、Markdown"
-                    "标题或表格。不得把相关性写成因果。仅输出合法JSON。"
+                    "明确反证条件。原始Prompt只用于确定研究重点和篇幅，不得按问答形式逐题回应。"
+                    "不得输出任何EVD、FND、TRD、SCN、SRC等内部编码，也不得使用emoji、箭头、项目"
+                    "符号、口语、AI自述、营销口号、Markdown标题或表格。不得把相关性写成因果。"
+                    "仅输出合法JSON。"
                 ),
             ),
             ChatMessage(
@@ -555,6 +554,7 @@ def _plain_report_prose(value: Any) -> str:
     """Normalize model or artifact text into restrained institutional prose."""
 
     text = str(value or "").strip()
+    text = re.sub(r"\b(?:EVD|FND|TRD|SCN|SRC|ENT)-[A-Za-z0-9_-]+\b", "", text)
     text = _REPORT_SYMBOLS.sub("", text)
     text = re.sub(r"(?m)^\s*(?:[-*•]+|\d+[.)])\s+", "", text)
     text = re.sub(r"(?m)^\s*#{1,6}\s+", "", text)
@@ -597,7 +597,6 @@ def _validate_narrative_payload(
         if received != expected:
             raise ReportGenerationError(f"正式报告叙事的{key}与批准材料不一致")
 
-    validate_rows("prompt_responses", "question_index", set(range(question_count)))
     validate_rows("module_introductions", "module_id", module_ids)
     validate_rows("finding_paragraphs", "finding_id", finding_ids)
     validate_rows("trend_paragraphs", "trend_id", trend_ids)
@@ -663,10 +662,28 @@ def generate_general_report(
         raise ReportGenerationError("报告缺少已确认的证据、行业判断或趋势")
 
     source_map = {source.source_id: source for source in evidence.sources}
+    evidence_map = {item.evidence_id: item for item in accepted_evidence}
+    source_numbers: dict[str, int] = {}
+    ordered_sources = []
+    for item in accepted_evidence:
+        source = source_map.get(item.source_id)
+        if source is None or source.source_id in source_numbers:
+            continue
+        source_numbers[source.source_id] = len(ordered_sources) + 1
+        ordered_sources.append(source)
+
+    def source_markers(evidence_ids: list[str]) -> str:
+        numbers = []
+        for evidence_id in evidence_ids:
+            evidence_item = evidence_map.get(evidence_id)
+            if evidence_item is None:
+                continue
+            number = source_numbers.get(evidence_item.source_id)
+            if number is not None and number not in numbers:
+                numbers.append(number)
+        return "" if not numbers else "（资料来源：" + "、".join(f"[{number}]" for number in numbers) + "）"
+
     coverage = prompt_coverage or []
-    prompt_paragraphs = _narrative_map(
-        narrative, "prompt_responses", "question_index"
-    )
     module_paragraphs = _narrative_map(
         narrative, "module_introductions", "module_id"
     )
@@ -717,33 +734,6 @@ def generate_general_report(
             )
         )
 
-    lines.extend(["", "## 2. 对原始研究问题的回应", ""])
-    if coverage:
-        status_labels = {
-            "answered": "现有证据已形成直接回应",
-            "partial": "现有证据仅形成部分回应",
-            "evidence_gap": "现有证据尚不足以形成确定回应",
-        }
-        for index, item in enumerate(coverage):
-            references = "、".join(
-                [*item.evidence_ids, *item.finding_ids, *item.trend_ids]
-            ) or "尚无可采用的已批准材料"
-            fallback = _formal_paragraph(
-                status_labels.get(item.coverage_status, "现有材料需要进一步核验"),
-                item.note,
-                f"相关追溯记录为{references}",
-            )
-            lines.extend(
-                [
-                    f"### 2.{index + 1} {item.question}",
-                    "",
-                    prompt_paragraphs.get(index) or fallback,
-                    "",
-                ]
-            )
-    else:
-        lines.append("现有流程尚未形成原始研究问题的语义覆盖记录，相关问题应作为后续补充研究事项。")
-
     market = brief.market_definition
     market_paragraph = _formal_paragraph(
         brief.decision_statement,
@@ -755,9 +745,9 @@ def generate_general_report(
         f"纳入范围包括{'、'.join(market.inclusions)}" if market.inclusions else "",
         f"排除范围包括{'、'.join(market.exclusions)}" if market.exclusions else "",
     )
-    lines.extend(["", "## 3. 研究范围与市场定义", "", market_paragraph])
+    lines.extend(["", "## 2. 研究范围与市场定义", "", market_paragraph])
 
-    section_number = 4
+    section_number = 3
     for module in analysis.modules:
         module_findings = [
             item for item in module.findings
@@ -776,25 +766,19 @@ def generate_general_report(
             ]
         )
         for item_index, item in enumerate(module_findings, start=1):
-            references = "、".join(item.evidence_ids)
-            counter = (
-                f"反向证据记录为{'、'.join(item.counter_evidence_ids)}"
-                if item.counter_evidence_ids
-                else ""
-            )
             fallback = _formal_paragraph(
                 item.statement,
                 item.mechanism,
                 f"该判断置信度为{item.confidence:.0%}，其主要不确定性为{item.uncertainty}",
                 f"该判断在{item.boundary_condition}的情形下需要重新评估",
-                counter,
-                f"相关证据记录为{references}",
             )
+            paragraph = finding_paragraphs.get(item.finding_id) or fallback
+            citations = source_markers([*item.evidence_ids, *item.counter_evidence_ids])
             lines.extend(
                 [
                     f"### {section_number}.{item_index} {item.subject}",
                     "",
-                    finding_paragraphs.get(item.finding_id) or fallback,
+                    paragraph + citations,
                     "",
                 ]
             )
@@ -818,11 +802,13 @@ def generate_general_report(
             f"系统置信度为{trend.confidence.overall}分",
             f"若出现{'、'.join(trend.falsification_conditions)}，则应重新评估该预测",
         )
+        paragraph = trend_paragraphs.get(trend.trend_id) or fallback
+        citations = source_markers(trend.evidence_ids)
         lines.extend(
             [
                 f"### {section_number}.{trend_index} {trend.title}",
                 "",
-                trend_paragraphs.get(trend.trend_id) or fallback,
+                paragraph + citations,
                 "",
             ]
         )
@@ -869,29 +855,14 @@ def generate_general_report(
     )
     section_number += 1
 
-    lines.extend(["", f"## {section_number}. 附录：证据索引", ""])
-    for item in accepted_evidence:
-        source = source_map[item.source_id]
-        evidence_paragraph = _formal_paragraph(
-            item.statement,
-            f"原始材料摘录为“{_plain_report_prose(item.supporting_excerpt)}”",
-            f"该证据质量评分为{item.qa_score}分，发布主体及原文链接可追溯",
-        )
-        lines.extend(
-            [
-                f"### {item.evidence_id} · {item.kind.value}",
-                "",
-                evidence_paragraph,
-                "",
-                f"来源：[{{}}]({{}})".format(source.title, source.url),
-                "",
-            ]
-        )
+    lines.extend(["", f"## {section_number}. 资料来源", ""])
+    for number, source in enumerate(ordered_sources, start=1):
+        lines.append(f"[{number}] [{source.title}]({source.url})。")
     section_number += 1
     lines.extend(
         [
             "",
-            f"## {section_number}. 人工审核及责任边界",
+            f"## {section_number}. 研究说明",
             "",
             (
                 "本报告已经完成市场口径确认、证据真实性与研究可用性确认，以及拟纳入报告的行业判断、"
@@ -902,9 +873,11 @@ def generate_general_report(
     )
 
     unique_sources = {source_map[item.source_id].url for item in accepted_evidence}
+    markdown = "\n".join(lines).strip() + "\n"
+    markdown = re.sub(r"\b(?:EVD|FND|TRD|SCN|SRC|ENT)-[A-Za-z0-9_-]+\b", "", markdown)
     return GeneralReportArtifact(
         title=project.project_name,
-        markdown="\n".join(lines).strip() + "\n",
+        markdown=markdown,
         accepted_evidence_ids=[item.evidence_id for item in accepted_evidence],
         accepted_finding_ids=[item.finding_id for item in accepted_findings],
         accepted_trend_ids=[item.trend_id for item in accepted_trends],
