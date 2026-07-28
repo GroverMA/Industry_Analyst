@@ -5,6 +5,7 @@ from pathlib import Path
 from streamlit.testing.v1 import AppTest
 
 from src.state.golden_case import load_golden_case
+from src.state.browser_history import HISTORY_CATALOG_KEY, build_project_record
 from src.state.session import ACTIVE_PAGE_KEY, PROJECT_KEY
 
 
@@ -53,3 +54,23 @@ def test_project_home_continue_uses_queued_navigation_without_state_error() -> N
 
     assert not app.exception
     assert app.segmented_control[0].label == "工作模式"
+
+
+def test_sidebar_exposes_project_archive_finish_and_delete_controls() -> None:
+    app_path = Path(__file__).resolve().parents[1] / "app.py"
+    project = load_golden_case()
+    record = build_project_record(project, "research_studio")
+    app = AppTest.from_file(str(app_path))
+    app.session_state[PROJECT_KEY] = project.model_dump(mode="json")
+    app.session_state[ACTIVE_PAGE_KEY] = "research_studio"
+    app.session_state[HISTORY_CATALOG_KEY] = {
+        "projects": [record],
+        "folders": [],
+    }
+    app.run(timeout=10)
+
+    labels = {button.label for button in app.button}
+    assert not app.exception
+    assert "存档项目" in labels
+    assert "立即结束研究" in labels
+    assert "删除项目" in labels

@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from pydantic import ValidationError
 
+from src.models.analysis import IndustryAnalysisArtifact
+from src.models.evidence import EvidenceCollectionArtifact
+from src.models.future import FutureIntelligenceArtifact
+from src.models.research import ResearchBriefArtifact, ResearchPlanArtifact
 from src.state.project import ProjectState, ResearchMode, WorkflowStatus, WorkspaceMode
+from src.state.project import rewind_to_previous_review_gate
 from src.state.browser_history import (
     build_project_record,
     project_is_complete,
@@ -167,3 +172,60 @@ def test_history_resume_uses_latest_work_page_instead_of_project_home() -> None:
 
     assert resume_page_for_project(project, "home") == "research_studio"
     assert resume_page_for_project(project, "evidence_analysis") == "evidence_analysis"
+
+
+def test_rewind_to_gate_zero_keeps_editable_brief_and_invalidates_later_work() -> None:
+    brief = ResearchBriefArtifact.model_construct(human_confirmed=True)
+    plan = ResearchPlanArtifact.model_construct()
+    project = make_project().model_copy(
+        update={"research_brief_artifact": brief, "research_plan_artifact": plan}
+    )
+
+    result = rewind_to_previous_review_gate(project)
+
+    assert result is not None
+    rewound, _ = result
+    assert rewound.current_step == "research_brief"
+    assert rewound.research_brief_artifact is not None
+    assert rewound.research_brief_artifact.human_confirmed is False
+    assert rewound.research_plan_artifact is None
+
+
+def test_rewind_from_analysis_returns_to_gate_one_and_clears_stale_outputs() -> None:
+    evidence = EvidenceCollectionArtifact.model_construct(human_confirmed=True)
+    analysis = IndustryAnalysisArtifact.model_construct(human_confirmed=False)
+    project = make_project().model_copy(
+        update={
+            "evidence_collection_artifact": evidence,
+            "industry_analysis_artifact": analysis,
+        }
+    )
+
+    result = rewind_to_previous_review_gate(project)
+
+    assert result is not None
+    rewound, _ = result
+    assert rewound.current_step == "evidence_qa"
+    assert rewound.evidence_collection_artifact.human_confirmed is False
+    assert rewound.industry_analysis_artifact is None
+
+
+def test_rewind_after_gate_two_returns_to_content_review() -> None:
+    analysis = IndustryAnalysisArtifact.model_construct(human_confirmed=True)
+    future = FutureIntelligenceArtifact.model_construct(human_confirmed=True)
+    project = make_project().model_copy(
+        update={
+            "industry_analysis_artifact": analysis,
+            "future_intelligence_artifact": future,
+            "general_report_artifact": object(),
+        }
+    )
+
+    result = rewind_to_previous_review_gate(project)
+
+    assert result is not None
+    rewound, _ = result
+    assert rewound.current_step == "human_review"
+    assert rewound.industry_analysis_artifact.human_confirmed is False
+    assert rewound.future_intelligence_artifact.human_confirmed is False
+    assert rewound.general_report_artifact is None

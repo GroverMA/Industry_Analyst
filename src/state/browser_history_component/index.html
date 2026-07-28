@@ -68,9 +68,25 @@
         if (!incoming || !incoming.project_id) return;
         const readTx = db.transaction(PROJECTS, "readonly");
         const existing = await requestResult(readTx.objectStore(PROJECTS).get(incoming.project_id));
+        const lifecycleState = existing?.lifecycle_state || "active";
+        const naturalStatus = incoming.status_group;
+        const naturalNode = incoming.node_label;
         const record = {
           ...incoming,
           folder_id: existing?.folder_id || null,
+          lifecycle_state: lifecycleState,
+          natural_status_group: naturalStatus,
+          natural_node_label: naturalNode,
+          status_group: lifecycleState === "archived"
+            ? "archived"
+            : lifecycleState === "finished"
+              ? "completed"
+              : naturalStatus,
+          node_label: lifecycleState === "archived"
+            ? "已存档"
+            : lifecycleState === "finished"
+              ? "已提前结束"
+              : naturalNode,
           saved_at: new Date().toISOString(),
         };
         const writeTx = db.transaction(PROJECTS, "readwrite");
@@ -100,6 +116,34 @@
         await transactionDone(writeTx);
       }
 
+      async function setProjectLifecycle(db, command) {
+        const readTx = db.transaction(PROJECTS, "readonly");
+        const record = await requestResult(readTx.objectStore(PROJECTS).get(command.project_id));
+        if (!record) return;
+        const lifecycleState = command.lifecycle_state || "active";
+        record.lifecycle_state = lifecycleState;
+        record.status_group = lifecycleState === "archived"
+          ? "archived"
+          : lifecycleState === "finished"
+            ? "completed"
+            : record.natural_status_group || "in_progress";
+        record.node_label = lifecycleState === "archived"
+          ? "已存档"
+          : lifecycleState === "finished"
+            ? "已提前结束"
+            : record.natural_node_label || record.node_label;
+        record.saved_at = new Date().toISOString();
+        const writeTx = db.transaction(PROJECTS, "readwrite");
+        writeTx.objectStore(PROJECTS).put(record);
+        await transactionDone(writeTx);
+      }
+
+      async function deleteProject(db, command) {
+        const tx = db.transaction(PROJECTS, "readwrite");
+        tx.objectStore(PROJECTS).delete(command.project_id);
+        await transactionDone(tx);
+      }
+
       async function loadProject(db, projectId) {
         const tx = db.transaction(PROJECTS, "readonly");
         return await requestResult(tx.objectStore(PROJECTS).get(projectId));
@@ -125,6 +169,7 @@
             updated_at: row.updated_at,
             active_page: row.active_page,
             folder_id: row.folder_id || null,
+            lifecycle_state: row.lifecycle_state || "active",
           })),
           folders: folderRows,
         };
@@ -137,6 +182,16 @@
         let loaded = null;
         if (command?.type === "create_folder") await createFolder(db, command);
         if (command?.type === "move") await moveProject(db, command);
+        if (command?.type === "archive") {
+          await setProjectLifecycle(db, {...command, lifecycle_state: "archived"});
+        }
+        if (command?.type === "finish") {
+          await setProjectLifecycle(db, {...command, lifecycle_state: "finished"});
+        }
+        if (command?.type === "activate") {
+          await setProjectLifecycle(db, {...command, lifecycle_state: "active"});
+        }
+        if (command?.type === "delete") await deleteProject(db, command);
         if (command?.type === "load") loaded = await loadProject(db, command.project_id);
         const currentCatalog = await catalog(db);
         db.close();

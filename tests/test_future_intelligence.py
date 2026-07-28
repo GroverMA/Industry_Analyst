@@ -34,6 +34,16 @@ from src.services.future_intelligence import (
     forecast_gate_reasons,
     review_forecast_item,
 )
+from src.services.industry_analysis import (
+    EXPECTED_MODULES,
+    IndustryAnalysisService,
+    review_analysis_finding,
+)
+from src.services.report_export import (
+    build_report_docx,
+    build_report_pdf,
+    project_report_context,
+)
 from src.services.report_generation import ReportGenerationService, generate_general_report
 from src.state.project import ProjectState
 from src.state.session import ACTIVE_PAGE_KEY, PROJECT_KEY
@@ -466,3 +476,108 @@ def test_report_semantically_checks_original_prompt_coverage() -> None:
     assert report.prompt_coverage[0].coverage_status == "answered"
     assert "对原始研究问题的回应" in report.markdown
     assert report.unresolved_prompt_questions == []
+
+
+def test_approved_evidence_reaches_downloadable_report_end_to_end() -> None:
+    project, evidence_artifact, _, evidence, _ = fixtures()
+    modules = []
+    for module_id in EXPECTED_MODULES:
+        dimensions = None
+        factor_fields = {}
+        if module_id == "market_value_chain":
+            dimensions = {"value_chain_position": "市场准入"}
+        elif module_id == "competitive_landscape":
+            dimensions = {
+                "relationship_type": "benchmark",
+                "comparison_basis": "同一监管环境",
+            }
+        elif module_id == "drivers_constraints":
+            dimensions = {}
+            factor_fields = {
+                "factor_role": "constraint",
+                "impact_direction": "negative",
+            }
+        modules.append(
+            {
+                "module_id": module_id,
+                "title": module_id,
+                "executive_summary": "当前证据支持审慎的行业判断。",
+                "findings": [
+                    {
+                        "subject": "中国分子诊断市场",
+                        "finding_type": "analyst_inference",
+                        "statement": "监管准入构成当前市场进入条件。",
+                        "mechanism": "准入要求增加参与者的合规资源需求。",
+                        "evidence_ids": [evidence.evidence_id],
+                        "counter_evidence_ids": None,
+                        "comparison_dimensions": dimensions,
+                        **factor_fields,
+                        "confidence": 0.8,
+                        "scope": "中国分子诊断市场",
+                        "uncertainty": "不同产品分类存在差异",
+                        "boundary_condition": "不适用于纯科研产品",
+                    }
+                ],
+                "evidence_gaps": ["仍需更多独立来源"],
+                "rejected_questions": [],
+            }
+        )
+    analysis = IndustryAnalysisService(
+        FakeModel({"modules": modules}), load_active_sop()
+    ).generate(project, evidence_artifact)
+    for item in list(analysis.findings):
+        analysis = review_analysis_finding(
+            analysis,
+            item.finding_id,
+            AnalysisReviewStatus.ACCEPTED,
+            "端到端测试审核",
+        )
+    analysis = analysis.model_copy(update={"human_confirmed": True})
+
+    anchor_finding = analysis.findings[0]
+    future = FutureIntelligenceService(
+        FakeModel(payload(evidence.evidence_id, anchor_finding.finding_id)),
+        load_active_sop(),
+    ).generate(project, evidence_artifact, analysis)
+    for item in [*future.trends, *future.scenarios]:
+        item_id = item.trend_id if hasattr(item, "trend_id") else item.scenario_id
+        future = review_forecast_item(
+            future,
+            item_id,
+            ForecastReviewStatus.ACCEPTED,
+            "端到端测试审核",
+        )
+    future = future.model_copy(update={"human_confirmed": True})
+    reviewed_project = project.model_copy(
+        update={
+            "evidence_collection_artifact": evidence_artifact,
+            "industry_analysis_artifact": analysis,
+            "future_intelligence_artifact": future,
+        }
+    )
+    coverage_payload = {
+        "items": [
+            {
+                "question_index": 0,
+                "coverage_status": "answered",
+                "evidence_ids": [evidence.evidence_id],
+                "finding_ids": [anchor_finding.finding_id],
+                "trend_ids": [future.trends[0].trend_id],
+                "note": "已批准证据、判断和趋势共同回答该问题。",
+            }
+        ]
+    }
+    report = ReportGenerationService(FakeModel(coverage_payload)).generate(
+        reviewed_project
+    )
+    export = project_report_context(
+        reviewed_project,
+        title=report.title,
+        markdown=report.markdown,
+        report_status="端到端测试报告",
+        generated_at=report.generated_at,
+    )
+
+    assert report.accepted_evidence_ids == [evidence.evidence_id]
+    assert build_report_docx(export).startswith(b"PK")
+    assert build_report_pdf(export).startswith(b"%PDF")

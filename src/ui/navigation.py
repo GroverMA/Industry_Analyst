@@ -15,7 +15,13 @@ from src.state.browser_history import (
     queue_history_command,
 )
 from src.state.project import ProjectState
-from src.state.session import ACTIVE_PAGE_KEY, clear_project
+from src.state.project import rewind_to_previous_review_gate
+from src.state.session import (
+    ACTIVE_PAGE_KEY,
+    clear_project,
+    queue_page_navigation,
+    set_project,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +54,94 @@ def _open_history_project(row: dict) -> None:
     st.rerun()
 
 
+def _run_history_action(
+    command_type: str,
+    project_id: str,
+    *,
+    active_project_id: str | None,
+) -> None:
+    queue_history_command(
+        st.session_state,
+        command_type,
+        project_id=project_id,
+    )
+    if project_id == active_project_id and command_type in {
+        "archive",
+        "finish",
+        "delete",
+    }:
+        clear_project(st.session_state)
+    st.rerun()
+
+
+def _render_history_management(
+    row: dict,
+    *,
+    active_project_id: str | None,
+    key_prefix: str,
+) -> None:
+    project_id = str(row.get("project_id") or "")
+    lifecycle = str(row.get("lifecycle_state") or "active")
+    status_group = str(row.get("status_group") or "in_progress")
+    with st.expander("项目管理", expanded=False):
+        if lifecycle == "archived":
+            if st.button(
+                "恢复至项目列表",
+                key=f"{key_prefix}_activate_{project_id}",
+                width="stretch",
+            ):
+                _run_history_action(
+                    "activate", project_id, active_project_id=active_project_id
+                )
+        elif lifecycle == "finished":
+            if st.button(
+                "恢复为进行中",
+                key=f"{key_prefix}_activate_{project_id}",
+                width="stretch",
+            ):
+                _run_history_action(
+                    "activate", project_id, active_project_id=active_project_id
+                )
+            if st.button(
+                "存档项目",
+                key=f"{key_prefix}_archive_{project_id}",
+                width="stretch",
+            ):
+                _run_history_action(
+                    "archive", project_id, active_project_id=active_project_id
+                )
+        else:
+            if st.button(
+                "存档项目",
+                key=f"{key_prefix}_archive_{project_id}",
+                width="stretch",
+            ):
+                _run_history_action(
+                    "archive", project_id, active_project_id=active_project_id
+                )
+            if status_group != "completed" and st.button(
+                "立即结束研究",
+                key=f"{key_prefix}_finish_{project_id}",
+                width="stretch",
+            ):
+                _run_history_action(
+                    "finish", project_id, active_project_id=active_project_id
+                )
+        delete_confirmed = st.checkbox(
+            "确认永久删除该浏览器中的项目记录",
+            key=f"{key_prefix}_delete_confirm_{project_id}",
+        )
+        if st.button(
+            "删除项目",
+            key=f"{key_prefix}_delete_{project_id}",
+            width="stretch",
+            disabled=not delete_confirmed,
+        ):
+            _run_history_action(
+                "delete", project_id, active_project_id=active_project_id
+            )
+
+
 def _history_row(
     row: dict,
     *,
@@ -68,6 +162,11 @@ def _history_row(
     ):
         _open_history_project(row)
     st.caption(f"{progress}% · {node}")
+    _render_history_management(
+        row,
+        active_project_id=active_project_id,
+        key_prefix=key_prefix,
+    )
 
 
 def _filtered_projects(catalog: dict, search_text: str) -> list[dict]:
@@ -99,8 +198,9 @@ def _render_history(catalog: dict, project: ProjectState | None) -> None:
     )
     rows = _filtered_projects(catalog, search_text)
     active_id = project.project_id if project else None
-    in_progress = [row for row in rows if row.get("status_group") != "completed"]
+    in_progress = [row for row in rows if row.get("status_group") == "in_progress"]
     completed = [row for row in rows if row.get("status_group") == "completed"]
+    archived = [row for row in rows if row.get("status_group") == "archived"]
 
     st.markdown('<div class="ia-sidebar-section">进行中的项目</div>', unsafe_allow_html=True)
     if in_progress:
@@ -115,6 +215,17 @@ def _render_history(catalog: dict, project: ProjectState | None) -> None:
             _history_row(row, active_project_id=active_id)
     else:
         st.caption("暂无已完成项目")
+
+    st.markdown('<div class="ia-sidebar-section">已存档项目</div>', unsafe_allow_html=True)
+    if archived:
+        for row in archived:
+            _history_row(
+                row,
+                active_project_id=active_id,
+                key_prefix="archived",
+            )
+    else:
+        st.caption("暂无存档项目")
 
 
 def _render_project_organizer(catalog: dict, project: ProjectState | None) -> None:
@@ -212,6 +323,28 @@ def _render_workspace_navigation(project: ProjectState) -> str:
         label_visibility="collapsed",
         key=ACTIVE_PAGE_KEY,
     )
+    rewind = rewind_to_previous_review_gate(project)
+    with st.expander("流程控制", expanded=False):
+        if rewind is None:
+            st.caption("当前已经处于最早可编辑节点。")
+        else:
+            _, message = rewind
+            st.caption(message)
+            confirmed = st.checkbox(
+                "确认返回并使后续旧结果失效",
+                key=f"rewind_confirm_{project.project_id}_{project.current_step}",
+            )
+            if st.button(
+                "返回上一研究节点",
+                width="stretch",
+                disabled=not confirmed,
+                key=f"rewind_{project.project_id}_{project.current_step}",
+            ):
+                updated, notice = rewind
+                set_project(st.session_state, updated)
+                st.session_state[HISTORY_RESPONSE_KEY] = notice
+                queue_page_navigation(st.session_state, "research_studio")
+                st.rerun()
     return selected
 
 

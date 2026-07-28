@@ -16,6 +16,7 @@ from src.models.analysis import (
     FactorRole,
     ImpactDirection,
     IndustryAnalysisArtifact,
+    IndustryAnalysisModule,
 )
 from src.models.evidence import EvidenceCollectionArtifact, EvidenceReviewStatus
 from src.models.research import MethodologyTrace
@@ -457,6 +458,20 @@ class IndustryAnalysisService:
                 for key in required
             ):
                 raise IndustryAnalysisError("行业分析finding字段不完整")
+            try:
+                AnalysisFinding.model_validate(finding)
+            except ValidationError as exc:
+                location = exc.errors()[0].get("loc", ("unknown",))
+                raise IndustryAnalysisError(
+                    f"行业分析finding字段类型无效：{location}"
+                ) from exc
+        try:
+            IndustryAnalysisModule.model_validate(module)
+        except ValidationError as exc:
+            location = exc.errors()[0].get("loc", ("unknown",))
+            raise IndustryAnalysisError(
+                f"行业分析模块字段类型无效：{location}"
+            ) from exc
 
     def _trace(self) -> MethodologyTrace:
         rules = [
@@ -490,7 +505,7 @@ class IndustryAnalysisService:
 
     @staticmethod
     def _normalize_factor_fields(payload: dict[str, Any]) -> dict[str, Any]:
-        """Normalize model formatting differences without inventing meaning."""
+        """Normalize harmless model formatting differences without inventing meaning."""
 
         aliases = {
             "驱动": "driver",
@@ -505,6 +520,17 @@ class IndustryAnalysisService:
             "混合": "mixed",
             "条件性": "conditional",
         }
+        direction_aliases = {
+            "正向": "positive",
+            "积极": "positive",
+            "促进": "positive",
+            "负向": "negative",
+            "消极": "negative",
+            "抑制": "negative",
+            "混合": "mixed",
+            "双向": "mixed",
+            "不确定": "uncertain",
+        }
         modules = payload.get("modules")
         if not isinstance(modules, list):
             return payload
@@ -517,6 +543,10 @@ class IndustryAnalysisService:
             for finding in findings:
                 if not isinstance(finding, dict):
                     continue
+                if not isinstance(finding.get("comparison_dimensions"), dict):
+                    finding["comparison_dimensions"] = {}
+                if not isinstance(finding.get("counter_evidence_ids"), list):
+                    finding["counter_evidence_ids"] = []
                 for key in ("factor_role", "impact_direction"):
                     value = finding.get(key)
                     if isinstance(value, str) and value.strip().lower() in {
@@ -532,10 +562,7 @@ class IndustryAnalysisService:
                         finding[key] = None
                 if module.get("module_id") != "drivers_constraints":
                     continue
-                dimensions = finding.get("comparison_dimensions")
-                if not isinstance(dimensions, dict):
-                    dimensions = {}
-                    finding["comparison_dimensions"] = dimensions
+                dimensions = finding["comparison_dimensions"]
                 role = finding.get("factor_role") or finding.get("force_type") or dimensions.get("force_type")
                 if isinstance(role, str):
                     normalized_role = role.strip()
@@ -545,7 +572,11 @@ class IndustryAnalysisService:
                     )
                 direction = finding.get("impact_direction") or dimensions.get("impact_direction")
                 if isinstance(direction, str) and direction.strip():
-                    finding["impact_direction"] = direction.strip().lower()
+                    normalized_direction = direction.strip()
+                    finding["impact_direction"] = direction_aliases.get(
+                        normalized_direction,
+                        normalized_direction.lower(),
+                    )
                 elif finding.get("factor_role") == FactorRole.DRIVER.value:
                     finding["impact_direction"] = ImpactDirection.POSITIVE.value
                 elif finding.get("factor_role") == FactorRole.CONSTRAINT.value:

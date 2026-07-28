@@ -161,3 +161,114 @@ class ProjectState(BaseModel):
             for status in applicable
         )
         return completed / len(applicable) if applicable else 0.0
+
+
+def rewind_to_previous_review_gate(
+    project: ProjectState,
+) -> tuple[ProjectState, str] | None:
+    """Return to the prior human gate while invalidating only stale outputs."""
+
+    statuses = dict(project.workflow_status)
+    strategy_reset = {
+        "company_scorecard_artifact": None,
+        "action_plan_artifact": None,
+        "enterprise_decision_report_artifact": None,
+    }
+    if project.general_report_artifact is not None or (
+        project.industry_analysis_artifact is not None
+        and project.future_intelligence_artifact is not None
+        and (
+            project.industry_analysis_artifact.human_confirmed
+            or project.future_intelligence_artifact.human_confirmed
+        )
+    ):
+        analysis = project.industry_analysis_artifact
+        future = project.future_intelligence_artifact
+        statuses["industry_analysis"] = WorkflowStatus.NEEDS_REVIEW
+        statuses["future_intelligence"] = WorkflowStatus.NEEDS_REVIEW
+        statuses["human_review"] = WorkflowStatus.NEEDS_REVIEW
+        statuses["decision_report"] = WorkflowStatus.READY
+        updated = project.model_copy(
+            update={
+                "industry_analysis_artifact": (
+                    analysis.model_copy(update={"human_confirmed": False})
+                    if analysis is not None
+                    else None
+                ),
+                "future_intelligence_artifact": (
+                    future.model_copy(update={"human_confirmed": False})
+                    if future is not None
+                    else None
+                ),
+                "general_report_artifact": None,
+                **strategy_reset,
+                "workflow_status": statuses,
+                "current_step": "human_review",
+                "updated_at": datetime.now(UTC),
+            }
+        )
+        return updated, "已返回Gate 2内容审核；报告与企业决策输出需要重新生成。"
+
+    if project.industry_analysis_artifact is not None or (
+        project.evidence_collection_artifact is not None
+        and project.evidence_collection_artifact.human_confirmed
+    ):
+        evidence = project.evidence_collection_artifact
+        statuses["evidence_collection"] = WorkflowStatus.NEEDS_REVIEW
+        statuses["evidence_qa"] = WorkflowStatus.NEEDS_REVIEW
+        for step in (
+            "industry_analysis",
+            "future_intelligence",
+            "human_review",
+            "decision_report",
+        ):
+            statuses[step] = WorkflowStatus.NOT_STARTED
+        updated = project.model_copy(
+            update={
+                "evidence_collection_artifact": (
+                    evidence.model_copy(update={"human_confirmed": False})
+                    if evidence is not None
+                    else None
+                ),
+                "industry_analysis_artifact": None,
+                "future_intelligence_artifact": None,
+                "general_report_artifact": None,
+                **strategy_reset,
+                "workflow_status": statuses,
+                "current_step": "evidence_qa",
+                "updated_at": datetime.now(UTC),
+            }
+        )
+        return updated, "已返回Gate 1证据审核；后续分析、趋势和报告需要重新生成。"
+
+    if project.research_brief_artifact is not None and (
+        project.research_brief_artifact.human_confirmed
+        or project.research_plan_artifact is not None
+        or project.evidence_collection_artifact is not None
+    ):
+        brief = project.research_brief_artifact.model_copy(
+            update={"human_confirmed": False}
+        )
+        statuses = default_workflow()
+        statuses["research_brief"] = WorkflowStatus.NEEDS_REVIEW
+        if not project.company_strategy_enabled:
+            statuses["company_assessment"] = WorkflowStatus.NOT_APPLICABLE
+            statuses["action_plan"] = WorkflowStatus.NOT_APPLICABLE
+        updated = project.model_copy(
+            update={
+                "research_brief_artifact": brief,
+                "research_plan_artifact": None,
+                "evidence_collection_artifact": None,
+                "industry_analysis_artifact": None,
+                "future_intelligence_artifact": None,
+                "general_report_artifact": None,
+                **strategy_reset,
+                "execution_authorized_at": None,
+                "market_scope_confirmed_at": None,
+                "workflow_status": statuses,
+                "current_step": "research_brief",
+                "updated_at": datetime.now(UTC),
+            }
+        )
+        return updated, "已返回Gate 0市场口径；确认修改后需要重新执行研究。"
+    return None

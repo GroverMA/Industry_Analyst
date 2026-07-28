@@ -305,3 +305,26 @@ def test_string_null_factor_fields_do_not_block_analysis_assembly() -> None:
     assert non_factor_findings
     assert all(item.factor_role is None for item in non_factor_findings)
     assert all(item.impact_direction is None for item in non_factor_findings)
+
+
+def test_null_comparison_dimensions_are_normalized_before_final_assembly() -> None:
+    artifact, accepted_id, _ = evidence_artifact()
+    generated = valid_payload(accepted_id)
+    for module in generated["modules"]:
+        if module["module_id"] not in {
+            "market_value_chain",
+            "competitive_landscape",
+            "drivers_constraints",
+        }:
+            module["findings"][0]["comparison_dimensions"] = None
+
+    analysis = IndustryAnalysisService(
+        FakeModel(generated), load_active_sop()
+    ).generate(project(), artifact)
+
+    assert len(analysis.modules) == 5
+    assert all(
+        isinstance(item.comparison_dimensions, dict)
+        for module in analysis.modules
+        for item in module.findings
+    )
