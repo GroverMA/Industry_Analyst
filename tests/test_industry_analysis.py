@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pytest
-
 from src.knowledge.sop import load_active_sop
 from src.models.analysis import AnalysisReviewStatus
 from src.models.evidence import (
@@ -22,7 +20,6 @@ from src.models.research import (
 from src.providers.base import ModelResponse, ProviderError
 from src.services.industry_analysis import (
     EXPECTED_MODULES,
-    IndustryAnalysisError,
     IndustryAnalysisService,
     analysis_gate_reasons,
     review_analysis_finding,
@@ -203,15 +200,16 @@ def test_analysis_only_sends_human_accepted_evidence() -> None:
     }
 
 
-def test_unknown_evidence_id_is_rejected_after_one_repair() -> None:
+def test_unknown_evidence_id_becomes_explicit_module_gap() -> None:
     artifact, _, _ = evidence_artifact()
     model = FakeModel(valid_payload("EVD-unknown"))
     service = IndustryAnalysisService(model, load_active_sop())
 
-    with pytest.raises(IndustryAnalysisError, match="未知或未接受"):
-        service.generate(project(), artifact)
+    analysis = service.generate(project(), artifact)
 
-    assert model.calls == 2
+    assert model.calls == 15
+    assert all(not module.findings for module in analysis.modules)
+    assert all(module.evidence_gaps for module in analysis.modules)
 
 
 def test_analysis_retries_one_invalid_json_response() -> None:
@@ -221,7 +219,7 @@ def test_analysis_retries_one_invalid_json_response() -> None:
         project(), artifact
     )
 
-    assert model.calls == 2
+    assert model.calls == 6
     assert len(analysis.modules) == 5
 
 
@@ -282,3 +280,28 @@ def test_unclassified_factor_becomes_gap_instead_of_failing_report() -> None:
 
     assert factor_result.findings == []
     assert any("无法可靠分类" in gap for gap in factor_result.evidence_gaps)
+
+
+def test_string_null_factor_fields_do_not_block_analysis_assembly() -> None:
+    artifact, accepted_id, _ = evidence_artifact()
+    generated = valid_payload(accepted_id)
+    for module in generated["modules"]:
+        if module["module_id"] == "drivers_constraints":
+            continue
+        for item in module["findings"]:
+            item["factor_role"] = "null"
+            item["impact_direction"] = "None"
+
+    analysis = IndustryAnalysisService(
+        FakeModel(generated), load_active_sop()
+    ).generate(project(), artifact)
+
+    non_factor_findings = [
+        item
+        for module in analysis.modules
+        if module.module_id != "drivers_constraints"
+        for item in module.findings
+    ]
+    assert non_factor_findings
+    assert all(item.factor_role is None for item in non_factor_findings)
+    assert all(item.impact_direction is None for item in non_factor_findings)

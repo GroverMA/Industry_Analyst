@@ -123,6 +123,9 @@ class FakeModel:
                     "market_scope": "分子诊断",
                     "supports_or_challenges": "supports",
                     "model_confidence": 0.9,
+                    "prompt_relevance": 0.95,
+                    "question_ids": ["T01-Q1"],
+                    "prompt_question_ids": [],
                     "scope_match": True,
                 }
             ],
@@ -143,7 +146,7 @@ def test_collection_builds_candidate_evidence_and_deduplicates_urls() -> None:
     service = EvidenceCollectionService(FakeModel(), FakeRouter())  # type: ignore[arg-type]
     result = asyncio.run(service.collect_task(project(), plan(), "T01"))
 
-    assert len(result.queries_used) == 2
+    assert len(result.queries_used) == 3
     assert len(result.sources) == 2
     assert len(result.evidence) == 1
     assert result.evidence[0].review_status == EvidenceReviewStatus.NEEDS_REVIEW
@@ -201,3 +204,24 @@ def test_quick_pipeline_authorization_allows_unconfirmed_plan_execution() -> Non
     run = asyncio.run(service.collect_task(quick_project, research_plan, "T01"))
 
     assert run.task_id == "T01"
+
+
+def test_gate_rejects_accepted_evidence_when_one_question_is_uncovered() -> None:
+    research_plan = plan()
+    task = research_plan.tasks[0].model_copy(
+        update={"questions": ["市场有多大？", "市场为什么增长？"]}
+    )
+    research_plan = research_plan.model_copy(update={"tasks": [task]})
+    service = EvidenceCollectionService(FakeModel(), FakeRouter())  # type: ignore[arg-type]
+    run = asyncio.run(service.collect_task(project(), research_plan, "T01"))
+    artifact = upsert_task_run(None, research_plan.artifact_id, run)
+    accepted = review_evidence(
+        artifact,
+        run.evidence[0].evidence_id,
+        EvidenceReviewStatus.ACCEPTED,
+        "已核对原网页",
+    )
+
+    reasons = evidence_gate_reasons(accepted, research_plan)
+
+    assert any("T01-Q2" in reason for reason in reasons)

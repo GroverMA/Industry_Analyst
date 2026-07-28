@@ -7,16 +7,15 @@ import streamlit as st
 from src.state.golden_case import load_golden_case
 from src.state.project import ProjectState, ResearchMode, WorkflowStatus
 from src.state.session import ACTIVE_PAGE_KEY, set_project
-from src.ui.components import information_card
 
 
 def render(project: ProjectState | None) -> None:
     st.markdown(
         """
-        <section class="ia-hero">
+        <section class="ia-hero" style="padding:1.75rem 2rem;margin-bottom:1.15rem">
           <div class="ia-eyebrow">Universal Industry Research Agent</div>
-          <h1>Industry Analyst OS</h1>
-          <p>从问题定义、证据与反证，到公司评分和 Action Plan。把行业研究方法转化为可核验、可审阅、可进入业务决策的工作流。</p>
+          <h1 style="font-size:clamp(1.9rem,3vw,2.55rem)">Industry Analyst OS</h1>
+          <p style="margin-top:.7rem">你的专属AI行业分析师：洞察未来趋势与竞争格局，发现市场机会，找到增长路径。</p>
         </section>
         """,
         unsafe_allow_html=True,
@@ -34,10 +33,18 @@ def render(project: ProjectState | None) -> None:
                 st.session_state[ACTIVE_PAGE_KEY] = "research_studio"
                 st.rerun()
 
-    left, right = st.columns([1.42, 0.72], gap="large")
+    left, right = st.columns([1.5, 0.8], gap="large")
     with left:
-        st.subheader("创建新的行业研究")
-        st.caption("适用于任意行业、地区和公司。未安装行业知识包时以 General Research 模式运行。")
+        st.markdown(
+            """
+            <div style="margin:.15rem 0 .8rem">
+              <span class="ia-badge ia-badge-accent">需要填写</span>
+              <h2 style="font-size:1.45rem;margin:.65rem 0 .25rem">开始新的行业研究</h2>
+              <p style="margin:0;font-size:.88rem">输入本次研究需要回答的问题。适用于任意行业、地区和公司。</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
         company_strategy_enabled = st.toggle(
             "启用企业战略路径（Company Scorecard + Action Plan）",
             value=False,
@@ -147,10 +154,19 @@ def render(project: ProjectState | None) -> None:
                     st.rerun()
 
     with right:
-        st.subheader("案例展示")
+        st.markdown(
+            """
+            <div style="margin:.15rem 0 .8rem">
+              <span class="ia-badge">仅供浏览</span>
+              <h2 style="font-size:1.45rem;margin:.65rem 0 .25rem">产品介绍与案例</h2>
+              <p style="margin:0;font-size:.88rem">了解产品能力或加载演示案例，此区域无需填写。</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
         with st.container(border=True):
-            st.markdown("#### 中国分子诊断行业")
-            st.caption("Industry Pack Enabled · 高精度演示案例")
+            st.markdown("#### 案例展示 · 中国分子诊断行业")
+            st.caption("Industry Pack Enabled · 高精度研究案例")
             st.write(
                 "模拟一家中国IVD企业在PCR、数字PCR、NGS和一体化方案之间进行资源配置。"
             )
@@ -160,22 +176,22 @@ def render(project: ProjectState | None) -> None:
                 st.session_state[ACTIVE_PAGE_KEY] = "research_studio"
                 st.rerun()
 
-        st.markdown("##### 系统原则")
-        information_card(
-            "Evidence First",
-            "重要结论必须连接证据，缺失信息形成明确缺口。",
-        )
-        st.write("")
-        information_card(
-            "Human in the Loop",
-            "高影响判断在进入决策报告前需要人工审核。",
-        )
-
-    st.divider()
-    cols = st.columns(3)
-    with cols[0]:
-        information_card("Universal Core", "任意行业均可创建研究项目。", value="Any Industry")
-    with cols[1]:
-        information_card("Research Discipline", "任务、证据、反证与审核节点可见。", value="10 Gates")
-    with cols[2]:
-        information_card("Decision Output", "行业判断最终映射至公司与行动。", value="Action Ready")
+        with st.container(border=True):
+            st.markdown("#### 产品优势")
+            st.markdown(
+                """
+                <div class="ia-status-row">
+                  <div><strong>通用行业底座</strong><br><span class="ia-muted">任意行业均可研究，并可接入行业知识包。</span></div>
+                </div>
+                <div class="ia-status-row">
+                  <div><strong>证据优先</strong><br><span class="ia-muted">重要结论连接原始来源，识别冲突与缺口。</span></div>
+                </div>
+                <div class="ia-status-row">
+                  <div><strong>人工审核</strong><br><span class="ia-muted">市场口径、证据与报告内容均由用户确认。</span></div>
+                </div>
+                <div class="ia-status-row">
+                  <div><strong>决策输出</strong><br><span class="ia-muted">行业洞察进一步映射至公司评分与行动计划。</span></div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )

@@ -78,6 +78,7 @@ PLAN_OUTPUT_CONTRACT = {
             "counter_evidence_required": True,
             "validation_gate": "string",
             "depends_on": ["T00"],
+            "prompt_question_ids": ["Q1"],
         }
     ],
     "human_review_gates": ["string"],
@@ -90,6 +91,10 @@ PLAN_OUTPUT_CONTRACT = {
         "competitive_landscape": ["T04"],
         "drivers_constraints": ["T05"],
         "future_intelligence": ["T06"],
+    },
+    "prompt_question_coverage": {
+        "Q1": ["T01"],
+        "Q2": ["T02", "T04"],
     },
 }
 
@@ -169,7 +174,11 @@ class ResearchPlanningService:
                     "证据标准与校验关卡。搜索词应可直接用于后续网页搜索。tasks中定义的"
                     "每个字段都必须存在且非空，depends_on可以为空数组。所有研究模式都必须"
                     "完整覆盖当前SOP；sop_coverage必须把每个必需研究模块映射到一个或多个真实"
-                    "task_id，不能因为用户选择快速模式而省略。\n\n"
+                    "task_id，不能因为用户选择快速模式而省略。prompt_question_coverage必须使用"
+                    "Q1、Q2等编号，把Research Brief中的每一个must_answer_question映射到至少一个"
+                    "真实task_id；每个task还必须在prompt_question_ids中声明它实际承担的Q编号，"
+                    "且该task的questions与search_queries必须围绕这些问题展开。每个用户必答问题"
+                    "至少需要一条直接检索式，任何用户必答问题都不能遗漏。\n\n"
                     f"项目输入：\n{json.dumps(self._project_payload(project), ensure_ascii=False)}\n\n"
                     "已确认Research Brief：\n"
                     f"{brief.model_dump_json(exclude={'methodology', 'generated_at'}, ensure_ascii=False)}\n\n"
@@ -181,12 +190,13 @@ class ResearchPlanningService:
             payload, response = self.model.complete_json(messages, enable_thinking=True)
             payload = self._unwrap(payload, "research_plan")
             try:
-                self._validate_plan_payload(payload)
+                self._validate_plan_payload(payload, brief)
                 payload["methodology"] = self._trace(
                     "plan",
                     [
                         "研究任务数量符合SOP",
                         "全部任务包含证据标准与反证要求",
+                        "原始Prompt中的每个必答问题均映射到执行任务",
                         "人工审核关卡数量符合SOP",
                     ],
                 ).model_dump()
@@ -237,7 +247,11 @@ class ResearchPlanningService:
         if not intent.get("requested_topics") or not intent.get("must_answer_questions"):
             raise SOPComplianceError("必须提取用户要求的主题和报告必答问题")
 
-    def _validate_plan_payload(self, payload: dict[str, Any]) -> None:
+    def _validate_plan_payload(
+        self,
+        payload: dict[str, Any],
+        brief: ResearchBriefArtifact,
+    ) -> None:
         constraints = self.sop.constraints
         tasks = payload.get("tasks")
         gates = payload.get("human_review_gates")
@@ -272,6 +286,46 @@ class ResearchPlanningService:
                     or not set(mapped).issubset(valid_task_ids)
                 ):
                     raise SOPComplianceError(f"SOP模块{module_id}未映射到有效研究任务")
+
+        prompt_coverage = payload.get("prompt_question_coverage")
+        must_answer = brief.interpreted_intent.must_answer_questions or brief.key_questions
+        required_question_ids = {f"Q{index}" for index in range(1, len(must_answer) + 1)}
+        if not isinstance(prompt_coverage, dict) or not required_question_ids.issubset(
+            prompt_coverage
+        ):
+            raise SOPComplianceError("研究计划遗漏了用户原始Prompt中的必答问题")
+        valid_task_ids = set(task_ids)
+        for question_id in required_question_ids:
+            mapped = prompt_coverage.get(question_id)
+            if (
+                not isinstance(mapped, list)
+                or not mapped
+                or not set(mapped).issubset(valid_task_ids)
+            ):
+                raise SOPComplianceError(f"必答问题{question_id}未映射到有效研究任务")
+
+        task_map = {task["task_id"]: task for task in tasks}
+        for question_id in required_question_ids:
+            for task_id in prompt_coverage[question_id]:
+                declared = task_map[task_id].get("prompt_question_ids")
+                if not isinstance(declared, list) or question_id not in declared:
+                    raise SOPComplianceError(
+                        f"任务{task_id}未声明其承担必答问题{question_id}"
+                    )
+        for task in tasks:
+            declared = task.get("prompt_question_ids")
+            if not isinstance(declared, list) or not declared:
+                raise SOPComplianceError(
+                    f"任务{task['task_id']}未连接到用户必答问题"
+                )
+            if not set(declared).issubset(required_question_ids):
+                raise SOPComplianceError(
+                    f"任务{task['task_id']}包含未知必答问题编号"
+                )
+            if len(task.get("search_queries", [])) < len(set(declared)):
+                raise SOPComplianceError(
+                    f"任务{task['task_id']}的检索式不足以逐项覆盖用户问题"
+                )
 
     @staticmethod
     def _unwrap(payload: dict[str, Any], key: str) -> dict[str, Any]:

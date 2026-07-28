@@ -31,6 +31,21 @@ from src.ui.pages.research_studio import _recommended_evidence_ids
 
 
 def test_gate_one_recommendations_cover_each_research_task() -> None:
+    def task(task_id: str, prompt_id: str) -> ResearchTask:
+        return ResearchTask(
+            task_id=task_id,
+            title=task_id,
+            objective="test",
+            questions=["必须回答的问题"],
+            hypotheses=["hypothesis"],
+            information_needs=["data"],
+            preferred_sources=["official"],
+            search_queries=["query"],
+            deliverables=["evidence"],
+            evidence_standard="traceable",
+            validation_gate="human",
+            prompt_question_ids=[prompt_id],
+        )
     source_a = EvidenceSource(
         task_id="T01",
         discovery_query="query-a",
@@ -61,6 +76,9 @@ def test_gate_one_recommendations_cover_each_research_task() -> None:
         market_scope="测试行业",
         supports_or_challenges="supports",
         model_confidence=0.8,
+        prompt_relevance=0.9,
+        question_ids=["T01-Q1"],
+        prompt_question_ids=["Q1"],
         qa_score=80,
     )
     low_qa = EvidenceItem(
@@ -73,6 +91,9 @@ def test_gate_one_recommendations_cover_each_research_task() -> None:
         market_scope="测试行业",
         supports_or_challenges="supports",
         model_confidence=0.5,
+        prompt_relevance=0.9,
+        question_ids=["T02-Q1"],
+        prompt_question_ids=["Q2"],
         qa_score=45,
     )
     artifact = EvidenceCollectionArtifact(
@@ -95,9 +116,76 @@ def test_gate_one_recommendations_cover_each_research_task() -> None:
         ],
     )
 
-    assert _recommended_evidence_ids(artifact) == {
-        high_qa.evidence_id,
-        low_qa.evidence_id,
+    plan = type("Plan", (), {"tasks": [task("T01", "Q1"), task("T02", "Q2")]})()
+
+    assert _recommended_evidence_ids(artifact, plan) == {high_qa.evidence_id}
+
+
+def test_gate_one_recommendation_uses_minimum_question_cover() -> None:
+    source = EvidenceSource(
+        task_id="T01",
+        discovery_query="query",
+        title="Official source",
+        url="https://example.gov.cn/source",
+        domain="example.gov.cn",
+        source_tier=SourceTier.A,
+        tier_reason="official",
+        transport="rest",
+    )
+    comprehensive = EvidenceItem(
+        task_id="T01",
+        source_id=source.source_id,
+        kind=EvidenceKind.FACT,
+        statement="一条证据直接回答两项问题。",
+        supporting_excerpt="一条证据直接回答两项问题",
+        geographic_scope="中国",
+        market_scope="测试行业",
+        supports_or_challenges="supports",
+        model_confidence=0.9,
+        prompt_relevance=0.95,
+        question_ids=["T01-Q1", "T01-Q2"],
+        prompt_question_ids=["Q1", "Q2"],
+        qa_score=95,
+    )
+    partial = comprehensive.model_copy(
+        update={
+            "evidence_id": "EVD-partial",
+            "statement": "仅回答第一项问题。",
+            "question_ids": ["T01-Q1"],
+            "prompt_question_ids": ["Q1"],
+            "qa_score": 90,
+        }
+    )
+    task = ResearchTask(
+        task_id="T01",
+        title="Task",
+        objective="test",
+        questions=["问题一", "问题二"],
+        hypotheses=["hypothesis"],
+        information_needs=["data"],
+        preferred_sources=["official"],
+        search_queries=["query one", "query two"],
+        deliverables=["evidence"],
+        evidence_standard="traceable",
+        validation_gate="human",
+        prompt_question_ids=["Q1", "Q2"],
+    )
+    artifact = EvidenceCollectionArtifact(
+        research_plan_id="plan",
+        task_runs=[
+            TaskEvidenceRun(
+                task_id="T01",
+                task_title="Task",
+                queries_used=["query"],
+                sources=[source],
+                evidence=[partial, comprehensive],
+            )
+        ],
+    )
+    plan = type("Plan", (), {"tasks": [task]})()
+
+    assert _recommended_evidence_ids(artifact, plan) == {
+        comprehensive.evidence_id
     }
 
 
@@ -130,6 +218,8 @@ def test_industry_analysis_workspace_renders_from_session_artifacts() -> None:
         market_scope="测试行业",
         supports_or_challenges="supports",
         model_confidence=0.9,
+        prompt_relevance=0.95,
+        question_ids=["T01-Q1"],
         qa_score=95,
         review_status=EvidenceReviewStatus.ACCEPTED,
     )

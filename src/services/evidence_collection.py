@@ -27,11 +27,13 @@ from src.providers.search_router import RoutedCrawlResult, SearchRouter
 from src.state.project import ProjectState
 
 
-MAX_QUERIES_PER_TASK = 2
+MAX_QUERIES_PER_TASK = 4
 MAX_RESULTS_PER_QUERY = 5
-MAX_PAGES_PER_TASK = 2
+MAX_PAGES_PER_TASK = 3
 MAX_PAGE_CHARACTERS = 7_000
 MAX_EVIDENCE_PER_TASK = 10
+MIN_GATE_ONE_QA = 80
+MIN_PROMPT_RELEVANCE = 0.70
 
 
 class StructuredModel(Protocol):
@@ -59,6 +61,9 @@ EXTRACTION_CONTRACT = {
             "market_scope": "string",
             "supports_or_challenges": "supports|challenges|neutral",
             "model_confidence": 0.0,
+            "prompt_relevance": 0.0,
+            "question_ids": ["T01-Q1"],
+            "prompt_question_ids": ["Q1"],
             "scope_match": True,
         }
     ],
@@ -153,7 +158,7 @@ class EvidenceCollectionService:
         if task is None:
             raise EvidenceCollectionError(f"研究计划中不存在任务：{task_id}")
 
-        queries = self._queries(task, query_override)
+        queries = self._queries(project, task, query_override)
         sources: list[EvidenceSource] = []
         errors: list[str] = []
         seen_urls: set[str] = set()
@@ -272,10 +277,16 @@ class EvidenceCollectionService:
                     f"项目：{project.project_name}\n行业：{project.industry}\n地区：{project.region}\n"
                     f"时间范围：{project.time_horizon}\n研究目标：{project.research_objective}\n"
                     f"任务：{task.task_id} {task.title}\n任务目标：{task.objective}\n"
-                    f"任务问题：{json.dumps(task.questions, ensure_ascii=False)}\n"
+                    "任务问题（必须逐项覆盖）："
+                    f"{json.dumps({f'{task.task_id}-Q{index}': question for index, question in enumerate(task.questions, start=1)}, ensure_ascii=False)}\n"
                     f"任务假设：{json.dumps(task.hypotheses, ensure_ascii=False)}\n\n"
                     "从下列来源最多抽取10条重要候选证据，同时指出来源之间的冲突和仍存在的信息缺口。"
+                    "每条证据必须填写question_ids，说明它直接帮助回答哪些任务问题；prompt_relevance"
+                    "表示该证据对所列问题的直接相关程度。每条证据还必须填写prompt_question_ids，"
+                    "把它连接到用户已确认的原始必答问题。不能回答任何任务问题的内容不得输出。"
                     "不得使用列表以外的source_id。\n\n"
+                    "本任务承担的用户必答问题："
+                    f"{json.dumps(self._prompt_question_ledger(project, task), ensure_ascii=False)}\n\n"
                     f"来源正文：\n{json.dumps(source_payload, ensure_ascii=False)}\n\n"
                     f"严格输出结构：\n{json.dumps(EXTRACTION_CONTRACT, ensure_ascii=False)}"
                 ),
@@ -285,7 +296,15 @@ class EvidenceCollectionService:
         for attempt in range(2):
             payload, response = self.model.complete_json(messages, enable_thinking=False)
             try:
-                self._validate_extraction(payload, {source.source_id for source in selected})
+                self._validate_extraction(
+                    payload,
+                    {source.source_id for source in selected},
+                    {
+                        f"{task.task_id}-Q{index}"
+                        for index in range(1, len(task.questions) + 1)
+                    },
+                    set(task.prompt_question_ids),
+                )
                 return payload
             except EvidenceCollectionError as exc:
                 last_error = exc
@@ -306,7 +325,12 @@ class EvidenceCollectionService:
         raise EvidenceCollectionError(f"证据抽取未通过结构校验：{last_error}")
 
     @staticmethod
-    def _validate_extraction(payload: dict[str, Any], source_ids: set[str]) -> None:
+    def _validate_extraction(
+        payload: dict[str, Any],
+        source_ids: set[str],
+        question_ids: set[str],
+        prompt_question_ids: set[str],
+    ) -> None:
         raw_evidence = payload.get("evidence")
         if not isinstance(raw_evidence, list):
             raise EvidenceCollectionError("evidence必须是数组")
@@ -323,12 +347,39 @@ class EvidenceCollectionService:
                 "market_scope",
                 "supports_or_challenges",
                 "model_confidence",
+                "prompt_relevance",
+                "question_ids",
+                "prompt_question_ids",
                 "scope_match",
             )
             if any(key not in item for key in required):
                 raise EvidenceCollectionError("证据候选字段不完整")
             if item.get("kind") not in {kind.value for kind in EvidenceKind}:
                 raise EvidenceCollectionError("证据类型无效")
+            raw_question_ids = item.get("question_ids")
+            if (
+                not isinstance(raw_question_ids, list)
+                or not raw_question_ids
+                or not set(raw_question_ids).issubset(question_ids)
+            ):
+                raise EvidenceCollectionError("证据未映射到有效任务问题")
+            raw_prompt_question_ids = item.get("prompt_question_ids")
+            if not isinstance(raw_prompt_question_ids, list):
+                raise EvidenceCollectionError("证据的用户问题映射必须是数组")
+            if prompt_question_ids and (
+                not raw_prompt_question_ids
+                or not set(raw_prompt_question_ids).issubset(prompt_question_ids)
+            ):
+                raise EvidenceCollectionError("证据未映射到有效用户必答问题")
+            if not prompt_question_ids and raw_prompt_question_ids:
+                raise EvidenceCollectionError("证据引用了任务未承担的用户问题")
+            relevance = item.get("prompt_relevance")
+            if (
+                not isinstance(relevance, (int, float))
+                or isinstance(relevance, bool)
+                or not 0 <= float(relevance) <= 1
+            ):
+                raise EvidenceCollectionError("prompt_relevance必须在0到1之间")
         if not isinstance(payload.get("information_gaps", []), list):
             raise EvidenceCollectionError("information_gaps必须是数组")
         if not isinstance(payload.get("conflicts", []), list):
@@ -348,6 +399,11 @@ class EvidenceCollectionService:
             excerpt = str(raw.get("supporting_excerpt") or "").strip()
             quote_verified = self._contains_excerpt(page_text.get(source.source_id, ""), excerpt)
             scope_match = raw.get("scope_match") is True
+            prompt_relevance = float(raw.get("prompt_relevance", 0))
+            question_ids = [str(value) for value in raw.get("question_ids", [])]
+            prompt_question_ids = [
+                str(value) for value in raw.get("prompt_question_ids", [])
+            ]
             flags: list[str] = []
             if not quote_verified:
                 flags.append("原文定位失败")
@@ -357,6 +413,8 @@ class EvidenceCollectionService:
                 flags.append("低可靠性来源")
             if not raw.get("source_date"):
                 flags.append("来源日期待确认")
+            if prompt_relevance < MIN_PROMPT_RELEVANCE:
+                flags.append("与任务问题相关性不足")
 
             if not quote_verified:
                 status = EvidenceReviewStatus.UNSUPPORTED
@@ -368,7 +426,14 @@ class EvidenceCollectionService:
                 status = EvidenceReviewStatus.NEEDS_REVIEW
 
             confidence = float(raw.get("model_confidence", 0))
-            score = self._qa_score(source, confidence, quote_verified, scope_match)
+            qa_breakdown = self._qa_breakdown(
+                source,
+                confidence,
+                quote_verified,
+                scope_match,
+                bool(raw.get("source_date")),
+            )
+            score = sum(qa_breakdown.values())
             try:
                 item = EvidenceItem(
                     task_id=task.task_id,
@@ -381,7 +446,11 @@ class EvidenceCollectionService:
                     market_scope=str(raw["market_scope"]).strip(),
                     supports_or_challenges=str(raw["supports_or_challenges"]).strip(),
                     model_confidence=confidence,
+                    prompt_relevance=prompt_relevance,
+                    question_ids=question_ids,
+                    prompt_question_ids=prompt_question_ids,
                     qa_score=score,
+                    qa_breakdown=qa_breakdown,
                     qa_flags=flags,
                     review_status=status,
                 )
@@ -425,10 +494,29 @@ class EvidenceCollectionService:
         return evidence, conflicts, gaps
 
     @staticmethod
-    def _queries(task: ResearchTask, override: str | None) -> list[str]:
+    def _queries(
+        project: ProjectState,
+        task: ResearchTask,
+        override: str | None,
+    ) -> list[str]:
         if override and override.strip():
             return [override.strip()]
-        return EvidenceCollectionService._unique(task.search_queries)[:MAX_QUERIES_PER_TASK]
+        generated = [
+            " ".join(
+                value
+                for value in (
+                    project.region,
+                    project.industry,
+                    question,
+                    "官方 数据 报告",
+                )
+                if value
+            )
+            for question in task.questions
+        ]
+        return EvidenceCollectionService._unique(
+            [*task.search_queries, *generated]
+        )[:MAX_QUERIES_PER_TASK]
 
     @staticmethod
     def _select_sources(sources: list[EvidenceSource]) -> list[EvidenceSource]:
@@ -443,7 +531,20 @@ class EvidenceCollectionService:
         )
         selected: list[EvidenceSource] = []
         domains: set[str] = set()
+        queries: set[str] = set()
+        # First retain the best result from different research questions. This
+        # avoids using the whole crawl budget on several results for one query.
         for source in ranked:
+            if source.discovery_query in queries or source.domain in domains:
+                continue
+            selected.append(source)
+            queries.add(source.discovery_query)
+            domains.add(source.domain)
+            if len(selected) == MAX_PAGES_PER_TASK:
+                return selected
+        for source in ranked:
+            if source in selected:
+                continue
             if source.domain in domains:
                 continue
             selected.append(source)
@@ -459,6 +560,27 @@ class EvidenceCollectionService:
         return selected
 
     @staticmethod
+    def _prompt_question_ledger(
+        project: ProjectState,
+        task: ResearchTask,
+    ) -> dict[str, str]:
+        brief = project.research_brief_artifact
+        questions = []
+        if brief is not None:
+            questions = (
+                brief.interpreted_intent.must_answer_questions
+                or brief.key_questions
+            )
+        ledger = {
+            f"Q{index}": question
+            for index, question in enumerate(questions, start=1)
+        }
+        return {
+            question_id: ledger.get(question_id, question_id)
+            for question_id in task.prompt_question_ids
+        }
+
+    @staticmethod
     def _contains_excerpt(content: str, excerpt: str) -> bool:
         if not excerpt or len(excerpt) < 6:
             return False
@@ -466,22 +588,26 @@ class EvidenceCollectionService:
         return normalize(excerpt) in normalize(content)
 
     @staticmethod
-    def _qa_score(
+    def _qa_breakdown(
         source: EvidenceSource,
         confidence: float,
         quote_verified: bool,
         scope_match: bool,
-    ) -> int:
-        base = {
-            SourceTier.A: 72,
-            SourceTier.B: 64,
-            SourceTier.C: 52,
-            SourceTier.D: 32,
+        has_source_date: bool,
+    ) -> dict[str, int]:
+        accountability = {
+            SourceTier.A: 35,
+            SourceTier.B: 31,
+            SourceTier.C: 24,
+            SourceTier.D: 10,
         }[source.source_tier]
-        score = base + round(max(0, min(confidence, 1)) * 12)
-        score += 10 if quote_verified else 0
-        score += 6 if scope_match else 0
-        return max(0, min(score, 100))
+        return {
+            "来源可追责性": accountability,
+            "原文可定位性": 25 if quote_verified else 0,
+            "研究口径匹配": 20 if scope_match else 0,
+            "抽取置信度": round(max(0, min(confidence, 1)) * 15),
+            "时间信息完整": 5 if has_source_date else 0,
+        }
 
     @staticmethod
     def _unique(values) -> list:
@@ -493,6 +619,163 @@ class EvidenceCollectionService:
             seen.add(value)
             output.append(value)
         return output
+
+
+def evidence_is_gate_one_candidate(item: EvidenceItem) -> bool:
+    """Return whether an item is strong and relevant enough for human review."""
+
+    legacy_task_level_item = not item.qa_breakdown and not item.question_ids
+    return (
+        item.review_status
+        in {EvidenceReviewStatus.NEEDS_REVIEW, EvidenceReviewStatus.ACCEPTED}
+        and item.qa_score >= MIN_GATE_ONE_QA
+        and (
+            item.prompt_relevance >= MIN_PROMPT_RELEVANCE
+            or legacy_task_level_item
+        )
+        and "原文定位失败" not in item.qa_flags
+        and "超出研究边界" not in item.qa_flags
+        and "低可靠性来源" not in item.qa_flags
+    )
+
+
+def evidence_coverage_gaps(
+    artifact: EvidenceCollectionArtifact | None,
+    plan: ResearchPlanArtifact,
+) -> dict[str, list[str]]:
+    """Audit whether every planned question has strong, relevant evidence.
+
+    Gate 1 must never be presented as ready when a task ran successfully but
+    still failed to answer one or more of its planned questions.
+    """
+
+    gaps: dict[str, list[str]] = {}
+    run_map = {run.task_id: run for run in artifact.task_runs} if artifact else {}
+    for task in plan.tasks:
+        run = run_map.get(task.task_id)
+        if run is None:
+            gaps[task.task_id] = ["尚未完成检索"]
+            continue
+        candidates = [item for item in run.evidence if evidence_is_gate_one_candidate(item)]
+        if not candidates:
+            gaps[task.task_id] = [
+                f"没有同时达到质量分{MIN_GATE_ONE_QA}和Prompt相关性"
+                f"{MIN_PROMPT_RELEVANCE:.0%}的证据"
+            ]
+            continue
+        required_ids = {
+            f"{task.task_id}-Q{index}" for index in range(1, len(task.questions) + 1)
+        }
+        covered_ids = {
+            question_id
+            for item in candidates
+            for question_id in item.question_ids
+            if question_id in required_ids
+        }
+        # Projects created before question-level tracing was introduced retain
+        # task-level compatibility, but every new extraction must trace IDs.
+        if candidates and not any(item.question_ids for item in candidates):
+            covered_ids = required_ids
+        missing_ids = required_ids - covered_ids
+        if missing_ids:
+            question_map = {
+                f"{task.task_id}-Q{index}": question
+                for index, question in enumerate(task.questions, start=1)
+            }
+            gaps[task.task_id] = [
+                f"{question_id}：{question_map[question_id]}" for question_id in sorted(missing_ids)
+            ]
+        required_prompt_ids = set(task.prompt_question_ids)
+        covered_prompt_ids = {
+            question_id
+            for item in candidates
+            for question_id in item.prompt_question_ids
+            if question_id in required_prompt_ids
+        }
+        # Backward compatibility for projects saved before prompt-level tracing.
+        if candidates and not any(item.prompt_question_ids for item in candidates):
+            covered_prompt_ids = required_prompt_ids
+        missing_prompt_ids = required_prompt_ids - covered_prompt_ids
+        if missing_prompt_ids:
+            task_gaps = gaps.setdefault(task.task_id, [])
+            task_gaps.extend(
+                f"用户必答问题{question_id}尚无高质量直接证据"
+                for question_id in sorted(missing_prompt_ids)
+            )
+    return gaps
+
+
+def supplemental_query(
+    project: ProjectState,
+    task: ResearchTask,
+    gap_details: list[str],
+) -> str:
+    """Build one focused query for an uncovered research question."""
+
+    unresolved = " ".join(gap_details[:2])
+    return " ".join(
+        value
+        for value in (
+            project.region,
+            project.industry,
+            task.title,
+            unresolved,
+            "最新 官方 数据 报告",
+        )
+        if value
+    )[:500]
+
+
+def merge_task_runs(existing: TaskEvidenceRun | None, incoming: TaskEvidenceRun) -> TaskEvidenceRun:
+    """Merge a supplemental search without discarding prior usable evidence."""
+
+    if existing is None:
+        return incoming
+    source_by_url = {normalize_url(source.url): source for source in existing.sources}
+    source_id_map: dict[str, str] = {}
+    for source in incoming.sources:
+        key = normalize_url(source.url)
+        if key in source_by_url:
+            source_id_map[source.source_id] = source_by_url[key].source_id
+        else:
+            source_by_url[key] = source
+            source_id_map[source.source_id] = source.source_id
+
+    evidence_by_signature = {
+        (item.statement.casefold(), item.supporting_excerpt.casefold()): item
+        for item in existing.evidence
+    }
+    for item in incoming.evidence:
+        remapped = item.model_copy(
+            update={"source_id": source_id_map.get(item.source_id, item.source_id)}
+        )
+        signature = (remapped.statement.casefold(), remapped.supporting_excerpt.casefold())
+        current = evidence_by_signature.get(signature)
+        if current is None or (
+            remapped.qa_score,
+            remapped.prompt_relevance,
+        ) > (
+            current.qa_score,
+            current.prompt_relevance,
+        ):
+            evidence_by_signature[signature] = remapped
+
+    return TaskEvidenceRun(
+        task_id=existing.task_id,
+        task_title=existing.task_title,
+        queries_used=EvidenceCollectionService._unique(
+            [*existing.queries_used, *incoming.queries_used]
+        ),
+        sources=list(source_by_url.values()),
+        evidence=list(evidence_by_signature.values()),
+        conflicts=[*existing.conflicts, *incoming.conflicts],
+        information_gaps=EvidenceCollectionService._unique(
+            [*existing.information_gaps, *incoming.information_gaps]
+        ),
+        search_errors=EvidenceCollectionService._unique(
+            [*existing.search_errors, *incoming.search_errors]
+        ),
+    )
 
 
 def upsert_task_run(
@@ -576,6 +859,43 @@ def evidence_gate_reasons(
         if run is None:
             reasons.append(f"{task.task_id} 尚未执行证据检索")
             continue
-        if not any(item.review_status == EvidenceReviewStatus.ACCEPTED for item in run.evidence):
+        accepted = [
+            item
+            for item in run.evidence
+            if item.review_status == EvidenceReviewStatus.ACCEPTED
+        ]
+        if not accepted:
             reasons.append(f"{task.task_id} 尚无人工接受的证据")
+            continue
+        required_ids = {
+            f"{task.task_id}-Q{index}" for index in range(1, len(task.questions) + 1)
+        }
+        covered_ids = {
+            question_id
+            for item in accepted
+            for question_id in item.question_ids
+            if question_id in required_ids
+        }
+        if accepted and not any(item.question_ids for item in accepted):
+            covered_ids = required_ids
+        question_map = {
+            f"{task.task_id}-Q{index}": question
+            for index, question in enumerate(task.questions, start=1)
+        }
+        for question_id in sorted(required_ids - covered_ids):
+            reasons.append(
+                f"{question_id}：{question_map[question_id]} 尚无人工采用证据"
+            )
+
+        required_prompt_ids = set(task.prompt_question_ids)
+        covered_prompt_ids = {
+            question_id
+            for item in accepted
+            for question_id in item.prompt_question_ids
+            if question_id in required_prompt_ids
+        }
+        if accepted and not any(item.prompt_question_ids for item in accepted):
+            covered_prompt_ids = required_prompt_ids
+        for question_id in sorted(required_prompt_ids - covered_prompt_ids):
+            reasons.append(f"用户必答问题{question_id} 尚无人工采用证据")
     return reasons

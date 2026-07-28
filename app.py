@@ -34,7 +34,9 @@ st.set_page_config(
     page_title="Industry Analyst OS",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="expanded",
+    # Desktop keeps the project library visible; Streamlit collapses it on
+    # narrow/mobile viewports so the research form remains immediately usable.
+    initial_sidebar_state="auto",
 )
 apply_theme()
 initialize_session(st.session_state)

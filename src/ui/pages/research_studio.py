@@ -22,9 +22,15 @@ from src.models.future import ForecastReviewStatus, ScenarioType
 from src.models.research import MarketDefinition, ResearchBriefArtifact, ResearchIntent
 from src.providers.base import ProviderError
 from src.services.evidence_collection import (
+    MIN_GATE_ONE_QA,
+    MIN_PROMPT_RELEVANCE,
     EvidenceCollectionError,
+    evidence_coverage_gaps,
     evidence_gate_reasons,
+    evidence_is_gate_one_candidate,
+    merge_task_runs,
     review_evidence,
+    supplemental_query,
     upsert_task_run,
 )
 from src.services.future_intelligence import (
@@ -102,31 +108,73 @@ def _records(value) -> list[dict]:
 
 def _recommended_evidence_ids(
     artifact: EvidenceCollectionArtifact,
+    plan,
 ) -> set[str]:
-    """Recommend credible evidence while keeping every research task covered.
+    """Return a minimum sufficient, quality-qualified evidence set.
 
-    QA >= 60 remains the normal recommendation threshold. If a task has no
-    candidate above that threshold, include its highest-scoring candidate so
-    the quick workflow can surface the weak link for explicit human review
-    instead of silently selecting evidence from only one well-covered task.
+    The greedy set-cover favors evidence that answers the largest number of
+    still-uncovered task and original-Prompt questions, then favors independent
+    domains, relevance and quality. Weak evidence is never selected to create
+    a false impression of coverage.
     """
-    recommended = {
-        item.evidence_id
-        for item in artifact.evidence
-        if item.review_status == EvidenceReviewStatus.ACCEPTED
-        or (
-            item.review_status == EvidenceReviewStatus.NEEDS_REVIEW
-            and item.qa_score >= 60
+
+    task_map = {task.task_id: task for task in plan.tasks}
+    required: set[str] = set()
+    for task in plan.tasks:
+        required.update(
+            f"TASK:{task.task_id}-Q{index}"
+            for index in range(1, len(task.questions) + 1)
         )
-    }
-    for run in artifact.task_runs:
-        if run.evidence and not any(
-            item.evidence_id in recommended for item in run.evidence
-        ):
-            recommended.add(
-                max(run.evidence, key=lambda item: item.qa_score).evidence_id
+        required.update(f"PROMPT:{item}" for item in task.prompt_question_ids)
+
+    def coverage(item) -> set[str]:
+        task = task_map.get(item.task_id)
+        if task is None:
+            return set()
+        task_ids = item.question_ids or [
+            f"{task.task_id}-Q{index}"
+            for index in range(1, len(task.questions) + 1)
+        ]
+        prompt_ids = item.prompt_question_ids or task.prompt_question_ids
+        return {
+            *(f"TASK:{question_id}" for question_id in task_ids),
+            *(f"PROMPT:{question_id}" for question_id in prompt_ids),
+        }
+
+    eligible = [
+        item for item in artifact.evidence if evidence_is_gate_one_candidate(item)
+    ]
+    source_map = {source.source_id: source for source in artifact.sources}
+    selected: set[str] = set()
+    selected_domains: set[str] = set()
+    remaining = set(required)
+    while remaining:
+        ranked = []
+        for item in eligible:
+            if item.evidence_id in selected:
+                continue
+            newly_covered = coverage(item) & remaining
+            if not newly_covered:
+                continue
+            source = source_map.get(item.source_id)
+            domain = source.domain if source is not None else item.source_id
+            ranked.append(
+                (
+                    len(newly_covered),
+                    int(domain not in selected_domains),
+                    item.prompt_relevance,
+                    item.qa_score,
+                    item,
+                    domain,
+                )
             )
-    return recommended
+        if not ranked:
+            break
+        *_, chosen, domain = max(ranked, key=lambda value: value[:4])
+        selected.add(chosen.evidence_id)
+        selected_domains.add(domain)
+        remaining -= coverage(chosen)
+    return selected
 
 
 def _to_lines(values: list[str]) -> str:
@@ -302,6 +350,7 @@ def _pipeline_flags(project: ProjectState) -> list[tuple[str, bool]]:
         and evidence
         and evidence.research_plan_id == plan.artifact_id
         and {run.task_id for run in evidence.task_runs} >= {task.task_id for task in plan.tasks}
+        and not evidence_coverage_gaps(evidence, plan)
     )
     content_confirmed = bool(
         project.industry_analysis_artifact
@@ -332,19 +381,26 @@ def _pipeline_flags(project: ProjectState) -> list[tuple[str, bool]]:
 
 def _render_progress(project: ProjectState) -> None:
     flags = _pipeline_flags(project)
-    cards: list[str] = []
+    completed = sum(done for _, done in flags)
+    progress_percent = (
+        100 * max(completed - 1, 0) / max(len(flags) - 1, 1)
+    )
+    steps: list[str] = []
     for index, (label, done) in enumerate(flags, start=1):
         state_class = " ia-pipeline-step-done" if done else ""
-        cards.append(
+        steps.append(
             f'<div class="ia-pipeline-step{state_class}">'
-            f"<span>{'✓' if done else index}</span>"
-            f"<strong>{label}</strong></div>"
+            f"<strong>{label}</strong>"
+            f"<span>{index}</span></div>"
         )
     st.markdown(
-        '<div class="ia-pipeline-grid">' + "".join(cards) + "</div>",
+        f'<div class="ia-pipeline-scroll"><div class="ia-pipeline-track" '
+        f'style="--ia-step-count:{len(flags)};--ia-progress-width:{progress_percent * 0.91:.1f}%">'
+        + "".join(steps)
+        + "</div></div>",
         unsafe_allow_html=True,
     )
-    st.progress(sum(done for _, done in flags) / len(flags))
+    st.caption(f"研究进度：{completed}/{len(flags)} 个节点已完成")
 
 
 def _render_advanced_context(project: ProjectState) -> None:
@@ -597,21 +653,59 @@ def _run_research_design_and_search(project: ProjectState) -> None:
                 f"{task.task_id} · {task.title}：任务运行环境已更新，请在本页重试该任务"
             )
 
+    # Run one bounded, focused repair pass before exposing Gate 1. This prevents
+    # a technically completed search queue from silently omitting a planned
+    # question or relying on weak evidence.
+    initial_gaps = evidence_coverage_gaps(artifact, plan)
+    if initial_gaps:
+        task_map = {task.task_id: task for task in plan.tasks}
+        for index, (task_id, details) in enumerate(initial_gaps.items(), start=1):
+            task = task_map[task_id]
+            fraction = 0.90 + 0.08 * index / max(len(initial_gaps), 1)
+            progress.progress(fraction, text=f"正在自动补检 {task_id} · {task.title}")
+            try:
+                supplemental = _run_task(
+                    current,
+                    task_id,
+                    supplemental_query(current, task, details),
+                )
+                merged = merge_task_runs(
+                    artifact.run_for(task_id) if artifact else None,
+                    supplemental,
+                )
+                artifact = upsert_task_run(artifact, plan.artifact_id, merged)
+                current = current.model_copy(
+                    update={
+                        "evidence_collection_artifact": artifact,
+                        "updated_at": datetime.now(UTC),
+                    }
+                )
+                _save(current)
+            except Exception as exc:
+                failures.append(f"{task_id} · 自动补检未完成：{exc}")
+
     statuses = dict(current.workflow_status)
-    statuses["evidence_collection"] = WorkflowStatus.NEEDS_REVIEW
-    statuses["evidence_qa"] = WorkflowStatus.NEEDS_REVIEW
+    remaining_gaps = evidence_coverage_gaps(artifact, plan)
+    statuses["evidence_collection"] = (
+        WorkflowStatus.BLOCKED if remaining_gaps else WorkflowStatus.NEEDS_REVIEW
+    )
+    statuses["evidence_qa"] = (
+        WorkflowStatus.NOT_STARTED if remaining_gaps else WorkflowStatus.NEEDS_REVIEW
+    )
     current = current.model_copy(
         update={
             "evidence_collection_artifact": artifact,
             "workflow_status": statuses,
-            "current_step": "evidence_qa",
+            "current_step": "evidence_collection" if remaining_gaps else "evidence_qa",
             "updated_at": datetime.now(UTC),
         }
     )
     _save(current)
     final_text = (
-        "网页检索完成，等待Gate 1人工确认"
-        if artifact is not None and artifact.task_runs
+        "检索与逐问题覆盖检查完成，等待Gate 1人工确认"
+        if artifact is not None and artifact.task_runs and not remaining_gaps
+        else f"仍有{len(remaining_gaps)}项证据覆盖缺口，已保留现有结果"
+        if remaining_gaps
         else "本轮检索没有形成可保存结果，请重试"
     )
     progress.progress(1.0, text=final_text)
@@ -625,10 +719,15 @@ def _retry_task(project: ProjectState, task_id: str, query: str | None) -> None:
     try:
         with st.spinner("正在重新搜索、抓取并抽取候选证据…"):
             run = _run_task(project, task_id, query)
+            existing = (
+                project.evidence_collection_artifact.run_for(task_id)
+                if project.evidence_collection_artifact
+                else None
+            )
             artifact = upsert_task_run(
                 project.evidence_collection_artifact,
                 plan.artifact_id,
-                run,
+                merge_task_runs(existing, run),
             )
     except (ConfigurationError, ProviderError, EvidenceCollectionError, ValidationError) as exc:
         st.error(f"重新检索失败：{exc}")
@@ -655,6 +754,70 @@ def _retry_task(project: ProjectState, task_id: str, query: str | None) -> None:
     st.rerun()
 
 
+def _repair_all_coverage_gaps(project: ProjectState) -> None:
+    """Run one-click supplemental retrieval for every uncovered task question."""
+
+    plan = project.research_plan_artifact
+    artifact = project.evidence_collection_artifact
+    assert plan is not None
+    initial_gaps = evidence_coverage_gaps(artifact, plan)
+    if not initial_gaps:
+        return
+    task_map = {task.task_id: task for task in plan.tasks}
+    progress = st.progress(0, text="正在检查待补问题…")
+    failures: list[str] = []
+    attempts = [
+        (task_id, detail)
+        for task_id, details in initial_gaps.items()
+        for detail in details
+    ]
+    for index, (task_id, detail) in enumerate(attempts, start=1):
+        task = task_map[task_id]
+        progress.progress(
+            (index - 1) / max(len(attempts), 1),
+            text=f"正在补检 {task_id} · {detail[:48]}",
+        )
+        try:
+            incoming = _run_task(
+                project,
+                task_id,
+                supplemental_query(project, task, [detail]),
+            )
+            merged = merge_task_runs(
+                artifact.run_for(task_id) if artifact else None,
+                incoming,
+            )
+            artifact = upsert_task_run(artifact, plan.artifact_id, merged)
+        except Exception:
+            failures.append(f"{task_id} · {detail}")
+
+    remaining = evidence_coverage_gaps(artifact, plan)
+    statuses = dict(project.workflow_status)
+    statuses["evidence_collection"] = (
+        WorkflowStatus.BLOCKED if remaining else WorkflowStatus.NEEDS_REVIEW
+    )
+    statuses["evidence_qa"] = (
+        WorkflowStatus.NOT_STARTED if remaining else WorkflowStatus.NEEDS_REVIEW
+    )
+    updated = project.model_copy(
+        update={
+            "evidence_collection_artifact": artifact,
+            "workflow_status": statuses,
+            "current_step": "evidence_collection" if remaining else "evidence_qa",
+            "updated_at": datetime.now(UTC),
+        }
+    )
+    _save(updated)
+    st.session_state["studio_pipeline_failures"] = [
+        f"{item}：补检仍未形成可用证据" for item in failures
+    ]
+    progress.progress(
+        1.0,
+        text="补检完成，等待证据审核" if not remaining else "补检完成，仍有外部证据缺口",
+    )
+    st.rerun()
+
+
 def _generate_content_drafts(project: ProjectState, evidence) -> None:
     statuses = _reset_strategy_statuses(
         project.workflow_status,
@@ -675,10 +838,11 @@ def _generate_content_drafts(project: ProjectState, evidence) -> None:
     try:
         with st.spinner("正在生成当前行业分析…"):
             analysis = industry_analysis_service().generate(saved_gate, evidence)
-    except Exception:
+    except Exception as exc:
+        diagnostic = str(exc).strip()[:260] or exc.__class__.__name__
         message = (
-            "行业分析本轮未能形成完整的结构化结果。Gate 1证据审核已经保存，"
-            "无需重新搜索或逐条重审；请直接点击“重新生成行业分析与趋势”。"
+            "行业分析的结构检查未通过。Gate 1证据审核已经保存，无需重新搜索或逐条重审；"
+            f"本次失败位置：行业分析组装；原因：{diagnostic}。"
         )
         statuses["industry_analysis"] = WorkflowStatus.BLOCKED
         failed = saved_gate.model_copy(
@@ -715,10 +879,11 @@ def _generate_content_drafts(project: ProjectState, evidence) -> None:
                 analysis,
                 allow_pending_findings=True,
             )
-    except Exception:
+    except Exception as exc:
+        diagnostic = str(exc).strip()[:260] or exc.__class__.__name__
         message = (
             "行业现状分析已经保存，但未来趋势本轮未能完成。无需重复网页检索或行业分析，"
-            "请直接点击“继续生成趋势”。"
+            f"请直接点击“继续生成趋势”。失败原因：{diagnostic}。"
         )
         statuses = dict(interim.workflow_status)
         statuses["industry_analysis"] = WorkflowStatus.NEEDS_REVIEW
@@ -802,7 +967,7 @@ def _render_gate_one(project: ProjectState, advanced: bool) -> None:
         "打开来源核对原文，并决定证据是否可以进入分析。快速模式给出系统推荐；最终采用决定必须由用户确认。"
     )
     source_map = {source.source_id: source for source in artifact.sources}
-    recommended_ids = _recommended_evidence_ids(artifact)
+    recommended_ids = _recommended_evidence_ids(artifact, plan)
     selection_key = f"studio_gate_one_selection_{artifact.artifact_id}"
     version_key = f"studio_gate_one_editor_version_{artifact.artifact_id}"
     if selection_key not in st.session_state:
@@ -820,8 +985,11 @@ def _render_gate_one(project: ProjectState, advanced: bool) -> None:
                 "类型": item.kind.value,
                 "证据陈述": item.statement,
                 "原文摘录": item.supporting_excerpt,
-                "来源等级": source.source_tier.value,
-                "QA": item.qa_score,
+                "质量评分": item.qa_score,
+                "问题相关度": round(item.prompt_relevance * 100),
+                "对应研究问题": "、".join(
+                    [*item.prompt_question_ids, *item.question_ids]
+                ) or "旧项目：任务级映射",
                 "来源": source.url,
             }
         )
@@ -829,10 +997,17 @@ def _render_gate_one(project: ProjectState, advanced: bool) -> None:
         st.warning("当前检索没有形成可审阅证据。请在本页重新检索相关任务。")
     else:
         st.caption(
-            f"共{len(rows)}条证据 · 系统推荐{len(recommended_ids)}条"
-            "（优先QA≥60，并保证每项任务至少一条最高分候选） · "
-            "可先批量选择，再重点检查低等级、冲突和高风险证据。"
+            f"共{len(rows)}条候选证据 · 系统推荐{len(recommended_ids)}条最小充分证据。"
+            f"推荐资格：质量评分≥{MIN_GATE_ONE_QA}、问题相关度≥{MIN_PROMPT_RELEVANCE:.0%}；"
+            "系统优先用较少且来源多样的证据覆盖全部研究问题，最终采用仍由你确认。"
         )
+        with st.expander("质量评分如何计算", expanded=False):
+            st.write(
+                "质量评分满分100分，由五项可核验规则组成：来源及责任主体可追责性35分、"
+                "原文可定位性25分、与已确认市场口径匹配20分、抽取置信度15分、"
+                "时间信息完整性5分。问题相关度是独立指标，用于判断证据是否直接回答你的问题，"
+                "不会用高质量但无关的材料凑数。"
+            )
         bulk_a, bulk_b, bulk_c = st.columns(3)
         if bulk_a.button("采用全部系统推荐", width="stretch"):
             st.session_state[selection_key] = set(recommended_ids)
@@ -1196,8 +1371,8 @@ def _render_report(project: ProjectState) -> None:
 def render(project: ProjectState | None) -> None:
     page_header(
         "Research Studio · Three Human Gates",
-        "在一个页面完成行业研究与报告",
-        "快速模式与高级工作台共用原始Prompt、市场口径、Research Plan、Evidence Matrix和三道人工确认；切换模式不会丢失或重复研究。",
+        "行业研究工作台",
+        "通用报告与高级分析师模式可以相互切换，且已经完成的研究部分不会丢失",
     )
     if not require_project(project):
         return
@@ -1265,7 +1440,27 @@ def render(project: ProjectState | None) -> None:
             if st.button("继续执行未完成检索", type="primary", width="stretch"):
                 _run_research_design_and_search(project)
 
-        if not evidence.human_confirmed:
+        coverage_gaps = evidence_coverage_gaps(evidence, plan)
+        if not evidence.human_confirmed and coverage_gaps:
+            st.subheader("网页研究覆盖检查")
+            st.warning(
+                "系统发现部分研究问题尚未取得同时满足质量与相关性要求的证据。"
+                "这些问题不会被静默遗漏，也不会提前进入Gate 1；点击一次即可按缺失问题自动补检，"
+                "无需修改原始Prompt。"
+            )
+            gap_rows = [
+                {"任务": task_id, "待补问题": detail}
+                for task_id, details in coverage_gaps.items()
+                for detail in details
+            ]
+            st.dataframe(gap_rows, hide_index=True, width="stretch")
+            if st.button(
+                "一键补检所有遗漏问题",
+                type="primary",
+                width="stretch",
+            ):
+                _repair_all_coverage_gaps(project)
+        elif not evidence.human_confirmed:
             _render_gate_one(project, advanced)
         elif project.industry_analysis_artifact is None:
             st.success("Gate 1已经通过。")

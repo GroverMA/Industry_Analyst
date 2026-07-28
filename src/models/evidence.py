@@ -337,7 +337,11 @@ class EvidenceItem(BaseModel):
     market_scope: str
     supports_or_challenges: str
     model_confidence: float = Field(ge=0, le=1)
+    prompt_relevance: float = Field(default=0.0, ge=0, le=1)
+    question_ids: list[str] = Field(default_factory=list)
+    prompt_question_ids: list[str] = Field(default_factory=list)
     qa_score: int = Field(ge=0, le=100)
+    qa_breakdown: dict[str, int] = Field(default_factory=dict)
     qa_flags: list[str] = Field(default_factory=list)
     review_status: EvidenceReviewStatus = EvidenceReviewStatus.NEEDS_REVIEW
     reviewer_note: str | None = None

@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from src.models.research import MethodologyTrace
 
@@ -57,6 +57,24 @@ class AnalysisFinding(BaseModel):
     review_status: AnalysisReviewStatus = AnalysisReviewStatus.NEEDS_REVIEW
     reviewer_note: str | None = None
     reviewed_at: datetime | None = None
+
+    @field_validator("factor_role", "impact_direction", mode="before")
+    @classmethod
+    def normalize_optional_enum_nulls(cls, value: object) -> object:
+        """Accept common model representations of an optional JSON null."""
+
+        if isinstance(value, str) and value.strip().lower() in {
+            "",
+            "null",
+            "none",
+            "n/a",
+            "na",
+            "not_applicable",
+            "不适用",
+            "无",
+        }:
+            return None
+        return value
 
 
 class IndustryAnalysisModule(BaseModel):

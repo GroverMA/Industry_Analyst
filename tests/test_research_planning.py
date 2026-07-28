@@ -69,6 +69,7 @@ def plan_payload() -> dict[str, Any]:
                 "counter_evidence_required": True,
                 "validation_gate": "Human verifies evidence coverage",
                 "depends_on": [] if index == 1 else [f"T{index - 1:02d}"],
+                "prompt_question_ids": [f"Q{min(index, 5)}"],
             }
         )
     return {
@@ -88,6 +89,13 @@ def plan_payload() -> dict[str, Any]:
             "competitive_landscape": ["T04"],
             "drivers_constraints": ["T05"],
             "future_intelligence": ["T06"],
+        },
+        "prompt_question_coverage": {
+            "Q1": ["T01"],
+            "Q2": ["T02"],
+            "Q3": ["T03"],
+            "Q4": ["T04"],
+            "Q5": ["T05", "T06"],
         },
     }
 
@@ -178,5 +186,16 @@ def test_service_rejects_plan_without_full_sop_coverage() -> None:
     service = ResearchPlanningService(fake, load_active_sop())
 
     with pytest.raises(SOPComplianceError, match="完整覆盖"):
+        brief = service.generate_brief(project()).model_copy(update={"human_confirmed": True})
+        service.generate_plan(project(), brief)
+
+
+def test_service_rejects_formal_prompt_mapping_not_declared_by_task() -> None:
+    invalid = plan_payload()
+    invalid["tasks"][0]["prompt_question_ids"] = ["Q2"]
+    fake = FakeStructuredModel([brief_payload(), invalid, invalid])
+    service = ResearchPlanningService(fake, load_active_sop())
+
+    with pytest.raises(SOPComplianceError, match="未声明其承担"):
         brief = service.generate_brief(project()).model_copy(update={"human_confirmed": True})
         service.generate_plan(project(), brief)

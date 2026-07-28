@@ -95,6 +95,10 @@ class ResearchTask(BaseModel):
     counter_evidence_required: bool = True
     validation_gate: str
     depends_on: list[str] = Field(default_factory=list)
+    # Stable links back to the user's confirmed must-answer question ledger.
+    # Older saved projects remain readable; newly generated plans are required
+    # to populate this field by ResearchPlanningService.
+    prompt_question_ids: list[str] = Field(default_factory=list)
 
 
 class ResearchPlanArtifact(BaseModel):
@@ -104,6 +108,7 @@ class ResearchPlanArtifact(BaseModel):
     human_review_gates: list[str] = Field(min_length=1)
     unresolved_gaps: list[str] = Field(default_factory=list)
     sop_coverage: dict[str, list[str]] = Field(default_factory=dict)
+    prompt_question_coverage: dict[str, list[str]] = Field(default_factory=dict)
     methodology: MethodologyTrace
     generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     human_confirmed: bool = False

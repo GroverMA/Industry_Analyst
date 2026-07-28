@@ -78,7 +78,7 @@ def _evidence_links(project: ProjectState, evidence_ids: list[str]) -> None:
         source = source_map[item.source_id]
         st.markdown(
             f"- `{evidence_id}` · [{source.title}]({source.url}) · "
-            f"等级 {source.source_tier.value} · QA {item.qa_score}"
+            f"质量评分 {item.qa_score}"
         )
 
 

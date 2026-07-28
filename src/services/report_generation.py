@@ -512,7 +512,7 @@ def _generate_structured_audit_report_legacy(
                 "",
                 f"> {item.supporting_excerpt}",
                 "",
-                f"来源：[{source.title}]({source.url}) · 等级 {source.source_tier.value} · QA {item.qa_score}/100",
+                f"来源：[{source.title}]({source.url}) · 质量评分 {item.qa_score}/100",
                 "",
             ]
         )
@@ -875,7 +875,7 @@ def generate_general_report(
         evidence_paragraph = _formal_paragraph(
             item.statement,
             f"原始材料摘录为“{_plain_report_prose(item.supporting_excerpt)}”",
-            f"该证据质量评分为{item.qa_score}分，来源等级为{source.source_tier.value}",
+            f"该证据质量评分为{item.qa_score}分，发布主体及原文链接可追溯",
         )
         lines.extend(
             [

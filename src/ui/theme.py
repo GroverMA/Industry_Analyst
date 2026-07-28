@@ -212,31 +212,49 @@ def apply_theme() -> None:
             border-bottom:1px solid var(--ia-border); padding:.75rem 0;
         }}
         .ia-status-row:last-child {{ border-bottom:0; }}
+        .ia-pipeline-scroll {{
+            overflow-x: auto; padding: .35rem .15rem .45rem; margin: .45rem 0 0;
+        }}
+        .ia-pipeline-track {{
+            position: relative; display: grid;
+            grid-template-columns: repeat(var(--ia-step-count, 11), minmax(88px, 1fr));
+            min-width: 760px; align-items: end;
+        }}
+        .ia-pipeline-track::after {{
+            content: ""; position: absolute; left: 4.5%; right: 4.5%; bottom: 13px;
+            height: 2px; background: #DDE5E8; z-index: 0;
+        }}
+        .ia-pipeline-track::before {{
+            content: ""; position: absolute; left: 4.5%; bottom: 13px;
+            width: var(--ia-progress-width, 0%);
+            height: 2px; background: var(--ia-accent); z-index: 1;
+        }}
         .ia-pipeline-step {{
-            min-height: 72px; padding: .62rem .52rem; border: 1px solid var(--ia-border);
-            border-radius: 10px; background: rgba(255,255,255,.78);
-            display: flex; flex-direction: column; gap: .35rem;
+            position: relative; z-index: 1; display: flex; flex-direction: column;
+            align-items: center; justify-content: flex-end; gap: .5rem;
+            min-width: 88px; text-align: center;
+        }}
+        .ia-pipeline-step strong {{
+            color: var(--ia-muted); font-size: .68rem; line-height: 1.25;
+            min-height: 2.2em; display: flex; align-items: flex-end; justify-content: center;
         }}
         .ia-pipeline-step span {{
-            width: 1.35rem; height: 1.35rem; border-radius: 999px;
+            width: 1.72rem; height: 1.72rem; border-radius: 999px;
             display: inline-flex; align-items: center; justify-content: center;
-            background: #E9EEF1; color: #445064; font-size: .72rem; font-weight: 760;
+            background: #FFFFFF; border: 2px solid #CDD8DC;
+            color: #596579; font-size: .7rem; font-weight: 760;
         }}
-        .ia-pipeline-step strong {{ color: var(--ia-text); font-size: .72rem; line-height: 1.3; }}
-        .ia-pipeline-step-done {{ border-color: #C9DDDA; background: #F2F8F6; }}
-        .ia-pipeline-step-done span {{ background: var(--ia-accent); color: #FFFFFF; }}
-        .ia-pipeline-grid {{
-            display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
-            gap: .65rem; margin: .65rem 0 .5rem;
+        .ia-pipeline-step-done strong {{ color: var(--ia-text); font-weight: 720; }}
+        .ia-pipeline-step-done span {{
+            background: var(--ia-accent); border-color: var(--ia-accent); color: #FFFFFF;
         }}
         .ia-muted {{ color: var(--ia-muted); }}
         #MainMenu, footer {{ visibility: hidden; }}
         @media (max-width: 760px) {{
             [data-testid="stAppViewContainer"] > .main .block-container {{ padding-top: 1rem; }}
             [data-testid="stSidebar"] {{ background: #FFFFFF; }}
-            .ia-pipeline-grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
             .ia-hero {{ padding: 1.5rem; }}
-            .ia-pipeline-step {{ min-height: 58px; padding: .45rem; }}
+            .ia-pipeline-track {{ min-width: 820px; }}
         }}
         </style>
         """,

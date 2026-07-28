@@ -12,6 +12,13 @@ def test_streamlit_shell_starts_without_exception() -> None:
 
     assert not app.exception
     assert any("Industry Analyst OS" in item.value for item in app.markdown)
+    assert any(
+        "你的专属AI行业分析师：洞察未来趋势与竞争格局，发现市场机会，找到增长路径。"
+        in item.value
+        for item in app.markdown
+    )
+    assert any("需要填写" in item.value for item in app.markdown)
+    assert any("仅供浏览" in item.value for item in app.markdown)
     assert not any(item.value == "恢复已有研究项目" for item in app.subheader)
 
 

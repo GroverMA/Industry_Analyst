@@ -10,11 +10,12 @@ from pydantic import ValidationError
 
 from src.config import ConfigurationError, Settings
 from src.models.analysis import AnalysisReviewStatus
-from src.models.evidence import EvidenceReviewStatus, SourceTier
+from src.models.evidence import EvidenceReviewStatus
 from src.providers.base import ProviderError
 from src.services.evidence_collection import (
     EvidenceCollectionError,
     evidence_gate_reasons,
+    merge_task_runs,
     review_evidence,
     upsert_task_run,
 )
@@ -104,8 +105,8 @@ def _run_task(project: ProjectState, task_id: str, query_override: str | None = 
 def _source_table(run) -> list[dict]:
     return [
         {
-            "等级": source.source_tier.value,
             "来源": source.title,
+            "来源说明": source.tier_reason,
             "域名": source.domain,
             "检索通道": source.transport.upper(),
             "正文": "已抓取" if source.crawled else "仅候选",
@@ -123,7 +124,7 @@ def _render_evidence_item(project: ProjectState, run, item) -> None:
     with st.container(border=True):
         header = st.columns([1.3, 1, 1])
         header[0].markdown(f"**{KIND_LABELS[item.kind.value]} · {STATUS_LABELS[item.review_status]}**")
-        header[1].caption(f"来源等级 {source.source_tier.value} · QA {item.qa_score}/100")
+        header[1].caption(f"质量评分 {item.qa_score}/100")
         header[2].caption(f"模型置信度 {item.model_confidence:.0%}")
         st.write(item.statement)
         st.caption(f"适用范围：{item.geographic_scope} · {item.market_scope}")
@@ -228,7 +229,7 @@ def _render_analysis_finding(project: ProjectState, finding, evidence_artifact) 
             source = source_map[item.source_id]
             st.markdown(
                 f"- `{evidence_id}` · [{source.title}]({source.url}) · "
-                f"来源等级 {source.source_tier.value} · QA {item.qa_score}"
+                f"质量评分 {item.qa_score}"
             )
         if finding.counter_evidence_ids:
             st.markdown("**反证或挑战证据**")
@@ -332,15 +333,12 @@ def render(project: ProjectState | None) -> None:
     with cols[3]:
         information_card("Verified Evidence", "由用户明确接受的证据。", value=str(accepted))
 
-    with st.expander("查看来源等级与调用预算", expanded=False):
+    with st.expander("查看质量评分规则与调用预算", expanded=False):
         st.markdown(
             """
-            - **A**：政府、监管、交易所、正式统计与法定披露
-            - **B**：学术、协会、标准、专利与正式国际机构
-            - **C**：专业媒体、咨询研究、企业官网及可信行业平台
-            - **D**：聚合、百科、自媒体或责任主体不清晰的二手来源
+            质量评分满分100分：来源及责任主体可追责性35分、原文可定位性25分、研究口径匹配20分、抽取置信度15分、时间信息完整性5分。系统推荐还要求问题相关度达到70%，避免用高质量但无关的材料凑数。
 
-            默认每项任务最多运行 2 条搜索式，每条保留前 5 个结果，并抓取 2 个高价值且尽量不同域名的网页。相同网址在当前服务进程内使用抓取缓存。
+            默认每项任务最多运行 4 条搜索式，每条保留前 5 个结果，并抓取 3 个优先覆盖不同问题、不同域名的网页。相同网址在当前服务进程内使用抓取缓存。
             """
         )
 
@@ -350,10 +348,10 @@ def render(project: ProjectState | None) -> None:
     selected_task = plan.tasks[task_labels.index(selected_label)]
     existing_run = artifact.run_for(selected_task.task_id) if artifact else None
     if existing_run:
-        st.caption("该任务已有证据；再次执行会用新结果替换该任务，其他任务不受影响。")
+        st.caption("该任务已有证据；补充检索会与既有证据合并，不会丢失此前结果。")
     custom_query = st.text_input(
         "补充检索式（可选）",
-        placeholder="留空时使用Research Plan中的前两条搜索式；填写后只执行这一条补充检索式。",
+        placeholder="留空时按Research Plan与任务问题执行检索；填写后只执行这一条补充检索式。",
     )
     run_one, run_all = st.columns(2)
     run_one_clicked = run_one.button(
@@ -372,7 +370,11 @@ def render(project: ProjectState | None) -> None:
         try:
             with st.spinner("正在搜索、筛选来源、抓取正文并抽取候选证据…"):
                 run = _run_task(project, selected_task.task_id, custom_query or None)
-                artifact = upsert_task_run(artifact, plan.artifact_id, run)
+                artifact = upsert_task_run(
+                    artifact,
+                    plan.artifact_id,
+                    merge_task_runs(existing_run, run),
+                )
         except ValidationError:
             st.error("证据结果未能安全写入当前项目。请直接重试；已保存的其他任务不会丢失。")
         except (
@@ -478,8 +480,8 @@ def render(project: ProjectState | None) -> None:
                     "任务": item.task_id,
                     "类型": KIND_LABELS[item.kind.value],
                     "证据陈述": item.statement,
-                    "来源等级": source.source_tier.value,
-                    "QA": item.qa_score,
+                    "质量评分": item.qa_score,
+                    "问题相关度": round(item.prompt_relevance * 100),
                     "状态": STATUS_LABELS[item.review_status],
                     "来源": source.url,
                 }
