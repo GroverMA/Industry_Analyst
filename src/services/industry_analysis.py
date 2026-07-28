@@ -137,6 +137,14 @@ class IndustryAnalysisService:
             for item in accepted
         ]
         allowed_ids = {item.evidence_id for item in accepted}
+        gap_context = {
+            "resolution": evidence_artifact.coverage_gap_resolution,
+            "user_input": evidence_artifact.coverage_gap_user_input,
+            "handling_rule": (
+                "用户补充内容只能作为待验证的专家观点或分析假设，不能作为公开事实证据；"
+                "存在缺口的结论必须降低置信度，并在evidence_gaps或rejected_questions中保留边界。"
+            ),
+        }
         modules = [
             self._generate_module(
                 module_id,
@@ -144,6 +152,7 @@ class IndustryAnalysisService:
                 brief,
                 evidence_payload,
                 allowed_ids,
+                gap_context,
             )
             for module_id in EXPECTED_MODULES
         ]
@@ -221,6 +230,7 @@ class IndustryAnalysisService:
         brief,
         evidence_payload: list[dict[str, Any]],
         allowed_ids: set[str],
+        gap_context: dict[str, Any],
     ) -> dict[str, Any]:
         """Generate and repair one module without invalidating the other four."""
 
@@ -289,6 +299,8 @@ class IndustryAnalysisService:
                     "已确认Research Brief：\n"
                     f"{brief.model_dump_json(exclude={'methodology', 'generated_at'}, ensure_ascii=False)}\n\n"
                     f"已接受证据：\n{json.dumps(module_evidence, ensure_ascii=False)}\n\n"
+                    "证据缺口人工处置：\n"
+                    f"{json.dumps(gap_context, ensure_ascii=False)}\n\n"
                     f"严格输出一个module对象：\n{json.dumps(module_contract, ensure_ascii=False)}"
                 ),
             ),

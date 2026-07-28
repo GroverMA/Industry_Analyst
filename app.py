@@ -16,10 +16,12 @@ from src.state.browser_history import (
     VALID_HISTORY_PAGES,
     normalize_catalog,
     render_history_bridge,
+    resume_page_for_project,
 )
 from src.state.project import ProjectState
 from src.state.session import (
     ACTIVE_PAGE_KEY,
+    NAVIGATION_REQUEST_KEY,
     get_project,
     initialize_session,
     set_project,
@@ -60,8 +62,9 @@ if history_response:
             else:
                 set_project(st.session_state, restored)
                 loaded_page = history_response.get("loaded_active_page")
-                st.session_state[ACTIVE_PAGE_KEY] = (
-                    loaded_page if loaded_page in VALID_HISTORY_PAGES else "research_studio"
+                st.session_state[ACTIVE_PAGE_KEY] = resume_page_for_project(
+                    restored,
+                    loaded_page if loaded_page in VALID_HISTORY_PAGES else None,
                 )
         if history_response.get("error"):
             st.session_state[HISTORY_RESPONSE_KEY] = "浏览器项目记录暂时不可用。"
@@ -69,6 +72,10 @@ if history_response:
         st.rerun()
 
 project = get_project(st.session_state)
+
+requested_page = st.session_state.pop(NAVIGATION_REQUEST_KEY, None)
+if requested_page in VALID_HISTORY_PAGES:
+    st.session_state[ACTIVE_PAGE_KEY] = requested_page
 
 # Streamlit Community Cloud can hot-reload ``app.py`` while retaining an older
 # imported module in the running process.  The history release changed the

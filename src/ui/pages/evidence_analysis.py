@@ -16,8 +16,8 @@ from src.services.evidence_collection import (
     EvidenceCollectionError,
     evidence_coverage_advisories,
     evidence_gate_reasons,
-    merge_task_runs,
     review_evidence,
+    unresolved_task_run,
     upsert_task_run,
 )
 from src.services.industry_analysis import (
@@ -343,88 +343,47 @@ def render(project: ProjectState | None) -> None:
             """
         )
 
-    st.subheader("A. 执行证据检索")
-    task_labels = [f"{task.task_id} · {task.title}" for task in plan.tasks]
-    selected_label = st.selectbox("选择研究任务", task_labels)
-    selected_task = plan.tasks[task_labels.index(selected_label)]
-    existing_run = artifact.run_for(selected_task.task_id) if artifact else None
-    if existing_run:
-        st.caption("该任务已有证据；补充检索会与既有证据合并，不会丢失此前结果。")
-    custom_query = st.text_input(
-        "补充检索式（可选）",
-        placeholder="留空时按Research Plan与任务问题执行检索；填写后只执行这一条补充检索式。",
-    )
-    run_one, run_all = st.columns(2)
-    run_one_clicked = run_one.button(
-        "检索所选任务" if not existing_run else "重新检索所选任务",
-        type="primary",
-        width="stretch",
-        disabled=not configured,
-    )
-    run_all_clicked = run_all.button(
-        "运行全部未检索任务",
-        width="stretch",
-        disabled=not configured,
-    )
-
-    if run_one_clicked:
-        try:
-            with st.spinner("正在搜索、筛选来源、抓取正文并抽取候选证据…"):
-                run = _run_task(project, selected_task.task_id, custom_query or None)
-                artifact = upsert_task_run(
-                    artifact,
-                    plan.artifact_id,
-                    merge_task_runs(existing_run, run),
-                )
-        except ValidationError:
-            st.error("证据结果未能安全写入当前项目。请直接重试；已保存的其他任务不会丢失。")
-        except (
-            ConfigurationError,
-            ProviderError,
-            EvidenceCollectionError,
-        ) as exc:
-            st.error(f"证据检索失败：{exc}")
-        else:
-            _save_artifact(project, artifact)
-            st.rerun()
-
-    if run_all_clicked:
-        pending = [
-            task for task in plan.tasks if artifact is None or artifact.run_for(task.task_id) is None
-        ]
-        if not pending:
-            st.info("全部研究任务都已有证据运行记录。可选择单项重新检索。")
-        else:
-            progress = st.progress(0, text="准备执行证据检索…")
-            failures: list[str] = []
-            current = artifact
-            for index, task in enumerate(pending, start=1):
+    st.subheader("A. 首次完整网页研究")
+    if artifact is None:
+        st.caption(
+            "系统会在一次研究轮次中执行Research Plan的全部任务。"
+            "未找到可靠资料的问题会作为研究限制进入人工审核，不会触发重复搜索。"
+        )
+        if st.button(
+            "执行完整网页研究",
+            type="primary",
+            width="stretch",
+            disabled=not configured,
+        ):
+            progress = st.progress(0, text="准备执行完整网页研究…")
+            current = None
+            for index, task in enumerate(plan.tasks, start=1):
                 progress.progress(
-                    (index - 1) / len(pending),
+                    (index - 1) / len(plan.tasks),
                     text=f"正在执行 {task.task_id} · {task.title}",
                 )
                 try:
                     run = _run_task(project, task.task_id)
-                    current = upsert_task_run(current, plan.artifact_id, run)
-                except ValidationError:
-                    failures.append(f"{task.task_id}：结果保存失败，请重试该任务")
+                except ValidationError as exc:
+                    run = unresolved_task_run(project, task, f"结果结构校验失败：{exc}")
                 except (
                     ConfigurationError,
                     ProviderError,
                     EvidenceCollectionError,
                 ) as exc:
-                    failures.append(f"{task.task_id}：{exc}")
-            progress.progress(1.0, text="证据检索已完成")
-            if current is not None:
-                _save_artifact(project, current)
-            if failures:
-                st.warning("部分任务未完成：\n\n" + "\n\n".join(failures))
-            else:
-                st.success("全部待检索任务已完成。")
+                    run = unresolved_task_run(project, task, str(exc))
+                current = upsert_task_run(current, plan.artifact_id, run)
+                _save_artifact(project, current, running=index < len(plan.tasks))
+            progress.progress(1.0, text="首次完整网页研究已完成")
             st.rerun()
+    else:
+        st.success(
+            "首次完整网页研究已经完成。后续不循环检索；未解决问题会在证据审核中"
+            "说明研究限制、分析师处理建议和建议补数路径。"
+        )
 
     if artifact is None or not artifact.task_runs:
-        st.info("尚未执行证据检索。你可以先运行一个任务快速验证，也可以运行全部未检索任务。")
+        st.info("尚未执行完整网页研究。")
         return
 
     st.divider()
@@ -465,7 +424,10 @@ def render(project: ProjectState | None) -> None:
                 for gap in run.information_gaps:
                     st.write(f"- {gap}")
             if not run.evidence:
-                st.info("本次没有形成可审阅证据；来源仍保留为线索，请调整搜索式或补充企业输入。")
+                st.info(
+                    "本次没有形成可审阅证据；该问题将作为研究限制处理，"
+                    "不会通过重复搜索或模型猜测补齐。"
+                )
             for item in run.evidence:
                 _render_evidence_item(project, run, item)
 
@@ -496,6 +458,9 @@ def render(project: ProjectState | None) -> None:
         )
 
     advisories = evidence_coverage_advisories(artifact, plan)
+    gap_resolution_code: str | None = None
+    gap_user_input: str | None = None
+    gap_resolution_ready = True
     if advisories:
         st.info(
             "以下问题属于证据覆盖限制，不会阻断Evidence Matrix审批。"
@@ -514,6 +479,32 @@ def render(project: ProjectState | None) -> None:
             hide_index=True,
             width="stretch",
         )
+        resolution_choice = st.radio(
+            "如何处理本轮证据缺口",
+            ["接受分析师处理建议并带限制继续", "补充我的判断后继续"],
+            horizontal=True,
+            key=f"analysis_gap_resolution_{artifact.artifact_id}",
+        )
+        if resolution_choice == "接受分析师处理建议并带限制继续":
+            gap_resolution_code = "accept_analyst_handling"
+        else:
+            gap_resolution_code = "user_input"
+            gap_user_input = st.text_area(
+                "补充你的行业判断、内部观察或建议采用的口径",
+                placeholder="该内容将作为待验证的专家输入，不会被标记为公开事实。",
+                key=f"analysis_gap_user_input_{artifact.artifact_id}",
+            ).strip()
+        gap_acknowledged = st.checkbox(
+            "我已阅读上述缺口及处理方式，并确认可以在这些证据边界下继续研究",
+            key=f"analysis_gap_acknowledged_{artifact.artifact_id}",
+        )
+        gap_resolution_ready = bool(
+            gap_acknowledged
+            and (
+                gap_resolution_code == "accept_analyst_handling"
+                or bool(gap_user_input)
+            )
+        )
 
     reasons = evidence_gate_reasons(artifact, plan)
     if reasons:
@@ -524,9 +515,18 @@ def render(project: ProjectState | None) -> None:
         "批准证据矩阵并进入行业分析",
         type="primary",
         width="stretch",
+        disabled=not gap_resolution_ready,
     ):
         approved = artifact.model_copy(
-            update={"human_confirmed": True, "updated_at": datetime.now(UTC)}
+            update={
+                "human_confirmed": True,
+                "coverage_gap_resolution": gap_resolution_code,
+                "coverage_gap_user_input": gap_user_input,
+                "coverage_gaps_acknowledged_at": (
+                    datetime.now(UTC) if advisories else None
+                ),
+                "updated_at": datetime.now(UTC),
+            }
         )
         statuses = dict(project.workflow_status)
         statuses["evidence_collection"] = WorkflowStatus.COMPLETED

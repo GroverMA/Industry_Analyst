@@ -361,9 +361,9 @@ def test_industry_analysis_workspace_renders_from_session_artifacts() -> None:
     assert not studio.exception
     labels = {button.label for button in studio.button}
     assert {"采用全部系统推荐", "一键全选", "全部取消"}.issubset(labels)
-    assert "执行一次补充检索（可选）" in labels
     assert "确认Gate 1并生成行业分析与趋势" in labels
-    assert "一键补检所有遗漏问题" not in labels
+    assert not any("补检" in label or "重新检索" in label for label in labels)
+    assert "继续执行未完成检索" not in labels
     assert any("证据缺口不会阻断研究" in item.value for item in studio.warning)
 
     gate_zero_project = project.model_copy(

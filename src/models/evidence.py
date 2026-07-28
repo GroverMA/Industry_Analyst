@@ -376,6 +376,9 @@ class EvidenceCollectionArtifact(BaseModel):
     generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     human_confirmed: bool = False
+    coverage_gap_resolution: str | None = None
+    coverage_gap_user_input: str | None = None
+    coverage_gaps_acknowledged_at: datetime | None = None
 
     def run_for(self, task_id: str) -> TaskEvidenceRun | None:
         return next((run for run in self.task_runs if run.task_id == task_id), None)

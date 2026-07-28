@@ -6,7 +6,7 @@ import streamlit as st
 
 from src.state.golden_case import load_golden_case
 from src.state.project import ProjectState, ResearchMode, WorkflowStatus
-from src.state.session import ACTIVE_PAGE_KEY, set_project
+from src.state.session import queue_page_navigation, set_project
 
 
 def render(project: ProjectState | None) -> None:
@@ -30,7 +30,7 @@ def render(project: ProjectState | None) -> None:
             cols[1].metric("完成度", f"{project.completion_ratio:.0%}")
             cols[2].metric("当前步骤", project.current_step.replace("_", " ").title())
             if st.button("继续 Research Studio", type="primary"):
-                st.session_state[ACTIVE_PAGE_KEY] = "research_studio"
+                queue_page_navigation(st.session_state, "research_studio")
                 st.rerun()
 
     left, right = st.columns([1.5, 0.8], gap="large")
@@ -150,7 +150,7 @@ def render(project: ProjectState | None) -> None:
                             update={"workflow_status": statuses}
                         )
                     set_project(st.session_state, new_project)
-                    st.session_state[ACTIVE_PAGE_KEY] = "research_studio"
+                    queue_page_navigation(st.session_state, "research_studio")
                     st.rerun()
 
     with right:
@@ -173,7 +173,7 @@ def render(project: ProjectState | None) -> None:
             st.write("**作用：**证明研究深度，不限制通用行业能力。")
             if st.button("加载案例展示", width="stretch"):
                 set_project(st.session_state, load_golden_case())
-                st.session_state[ACTIVE_PAGE_KEY] = "research_studio"
+                queue_page_navigation(st.session_state, "research_studio")
                 st.rerun()
 
         with st.container(border=True):

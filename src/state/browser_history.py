@@ -89,6 +89,23 @@ def build_project_record(project: ProjectState, active_page: str) -> dict[str, A
     }
 
 
+def resume_page_for_project(
+    project: ProjectState,
+    saved_page: str | None = None,
+) -> str:
+    """Return the latest useful workspace page for a restored project."""
+
+    if saved_page in VALID_HISTORY_PAGES and saved_page != "home":
+        return saved_page
+    if project.current_step == "company_assessment":
+        return "company_scorecard"
+    if project.current_step == "action_plan":
+        return "action_plan"
+    if project.current_step == "decision_report" and project.company_strategy_enabled:
+        return "decision_report"
+    return "research_studio"
+
+
 def queue_history_command(state, command_type: str, **payload: Any) -> None:
     """Queue one browser-history operation for the next Streamlit rerun."""
 

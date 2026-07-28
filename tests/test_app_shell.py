@@ -4,6 +4,9 @@ from pathlib import Path
 
 from streamlit.testing.v1 import AppTest
 
+from src.state.golden_case import load_golden_case
+from src.state.session import ACTIVE_PAGE_KEY, PROJECT_KEY
+
 
 def test_streamlit_shell_starts_without_exception() -> None:
     app_path = Path(__file__).resolve().parents[1] / "app.py"
@@ -35,3 +38,18 @@ def test_case_opens_single_page_research_studio() -> None:
     assert app.segmented_control[0].options == ["快速通用报告", "高级分析师工作台"]
     assert any(button.label == "AI分析研究需求并生成市场描述" for button in app.button)
     assert any(button.label == "新建研究" for button in app.button)
+
+
+def test_project_home_continue_uses_queued_navigation_without_state_error() -> None:
+    app_path = Path(__file__).resolve().parents[1] / "app.py"
+    app = AppTest.from_file(str(app_path))
+    app.session_state[PROJECT_KEY] = load_golden_case().model_dump(mode="json")
+    app.session_state[ACTIVE_PAGE_KEY] = "home"
+    app.run(timeout=10)
+
+    next(
+        button for button in app.button if button.label == "继续 Research Studio"
+    ).click().run(timeout=10)
+
+    assert not app.exception
+    assert app.segmented_control[0].label == "工作模式"

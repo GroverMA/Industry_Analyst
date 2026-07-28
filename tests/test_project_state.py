@@ -8,6 +8,7 @@ from src.state.browser_history import (
     project_is_complete,
     project_node_label,
     project_progress,
+    resume_page_for_project,
 )
 from src.state.session import PROJECT_KEY, clear_project, get_project, set_project
 
@@ -159,3 +160,10 @@ def test_project_history_progress_excludes_non_applicable_steps() -> None:
     assert project_progress(project) == 12
     assert project_is_complete(project) is False
     assert project_node_label(project) == "Research Brief"
+
+
+def test_history_resume_uses_latest_work_page_instead_of_project_home() -> None:
+    project = make_project().model_copy(update={"current_step": "evidence_qa"})
+
+    assert resume_page_for_project(project, "home") == "research_studio"
+    assert resume_page_for_project(project, "evidence_analysis") == "evidence_analysis"

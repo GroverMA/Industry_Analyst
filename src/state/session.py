@@ -10,6 +10,7 @@ from src.state.project import ProjectState
 
 PROJECT_KEY = "industry_analyst_project"
 ACTIVE_PAGE_KEY = "industry_analyst_active_page"
+NAVIGATION_REQUEST_KEY = "industry_analyst_navigation_request"
 
 
 def get_project(state: MutableMapping[str, Any]) -> ProjectState | None:
@@ -35,6 +36,12 @@ def set_project(state: MutableMapping[str, Any], project: ProjectState) -> None:
 def clear_project(state: MutableMapping[str, Any]) -> None:
     state.pop(PROJECT_KEY, None)
     state[ACTIVE_PAGE_KEY] = "home"
+
+
+def queue_page_navigation(state: MutableMapping[str, Any], page: str) -> None:
+    """Request navigation before the sidebar widget is created on rerun."""
+
+    state[NAVIGATION_REQUEST_KEY] = page
 
 
 def initialize_session(state: MutableMapping[str, Any]) -> None:

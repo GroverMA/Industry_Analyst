@@ -621,6 +621,26 @@ class EvidenceCollectionService:
         return output
 
 
+def unresolved_task_run(
+    project: ProjectState,
+    task: ResearchTask,
+    reason: str,
+) -> TaskEvidenceRun:
+    """Persist an attempted-but-unresolved task as a research limitation."""
+
+    queries = EvidenceCollectionService._queries(project, task, None)
+    return TaskEvidenceRun(
+        task_id=task.task_id,
+        task_title=task.title,
+        queries_used=queries or [f"{project.region} {project.industry} {task.title}"],
+        information_gaps=[
+            "首次完整检索未形成足够的可核验证据；该问题应按证据缺口处理，"
+            "不得通过重复搜索或模型猜测补齐。"
+        ],
+        search_errors=[reason],
+    )
+
+
 def evidence_is_gate_one_candidate(item: EvidenceItem) -> bool:
     """Return whether an item is strong and relevant enough for human review."""
 
@@ -650,7 +670,7 @@ def evidence_coverage_gaps(
     for task in plan.tasks:
         run = run_map.get(task.task_id)
         if run is None:
-            gaps[task.task_id] = ["尚未完成检索"]
+            gaps[task.task_id] = ["首次完整检索未形成有效运行记录"]
             continue
         candidates = [item for item in run.evidence if evidence_is_gate_one_candidate(item)]
         if not candidates:
@@ -752,79 +772,6 @@ def evidence_coverage_advisories(
             }
         )
     return advisories
-
-
-def supplemental_query(
-    project: ProjectState,
-    task: ResearchTask,
-    gap_details: list[str],
-) -> str:
-    """Build one focused query for an uncovered research question."""
-
-    unresolved = " ".join(gap_details[:2])
-    return " ".join(
-        value
-        for value in (
-            project.region,
-            project.industry,
-            task.title,
-            unresolved,
-            "最新 官方 数据 报告",
-        )
-        if value
-    )[:500]
-
-
-def merge_task_runs(existing: TaskEvidenceRun | None, incoming: TaskEvidenceRun) -> TaskEvidenceRun:
-    """Merge a supplemental search without discarding prior usable evidence."""
-
-    if existing is None:
-        return incoming
-    source_by_url = {normalize_url(source.url): source for source in existing.sources}
-    source_id_map: dict[str, str] = {}
-    for source in incoming.sources:
-        key = normalize_url(source.url)
-        if key in source_by_url:
-            source_id_map[source.source_id] = source_by_url[key].source_id
-        else:
-            source_by_url[key] = source
-            source_id_map[source.source_id] = source.source_id
-
-    evidence_by_signature = {
-        (item.statement.casefold(), item.supporting_excerpt.casefold()): item
-        for item in existing.evidence
-    }
-    for item in incoming.evidence:
-        remapped = item.model_copy(
-            update={"source_id": source_id_map.get(item.source_id, item.source_id)}
-        )
-        signature = (remapped.statement.casefold(), remapped.supporting_excerpt.casefold())
-        current = evidence_by_signature.get(signature)
-        if current is None or (
-            remapped.qa_score,
-            remapped.prompt_relevance,
-        ) > (
-            current.qa_score,
-            current.prompt_relevance,
-        ):
-            evidence_by_signature[signature] = remapped
-
-    return TaskEvidenceRun(
-        task_id=existing.task_id,
-        task_title=existing.task_title,
-        queries_used=EvidenceCollectionService._unique(
-            [*existing.queries_used, *incoming.queries_used]
-        ),
-        sources=list(source_by_url.values()),
-        evidence=list(evidence_by_signature.values()),
-        conflicts=[*existing.conflicts, *incoming.conflicts],
-        information_gaps=EvidenceCollectionService._unique(
-            [*existing.information_gaps, *incoming.information_gaps]
-        ),
-        search_errors=EvidenceCollectionService._unique(
-            [*existing.search_errors, *incoming.search_errors]
-        ),
-    )
 
 
 def upsert_task_run(
