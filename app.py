@@ -50,7 +50,7 @@ st.set_page_config(
 
 
 RUNTIME_RELEASE_KEY = "industry_analyst_runtime_release"
-RUNTIME_RELEASE_ID = "formal-report-and-enterprise-inputs-v3"
+RUNTIME_RELEASE_ID = "sullivan-sop-v2-five-section-report-v4"
 
 # Community Cloud updates the checkout without always restarting the Python
 # process. Refresh the modules changed by this release once per browser session
@@ -66,6 +66,13 @@ if (
     # enums and the enterprise page would fail during import.
     enterprise_model_module = importlib.reload(
         importlib.import_module("src.models.enterprise")
+    )
+    # Future Intelligence v2 adds forecast-method models.  Reload the model
+    # before state and service modules so a long-lived Community Cloud worker
+    # cannot resolve the new forecasting service against the previous model
+    # definition (which did not yet expose ``ForecastMethod``).
+    future_model_module = importlib.reload(
+        importlib.import_module("src.models.future")
     )
     project_state_module = importlib.reload(
         importlib.import_module("src.state.project")
@@ -86,6 +93,9 @@ if (
     )
     action_planning_service_module = importlib.reload(
         importlib.import_module("src.services.action_planning")
+    )
+    forecasting_service_module = importlib.reload(
+        importlib.import_module("src.services.forecasting")
     )
     report_generation_service_module = importlib.reload(
         importlib.import_module("src.services.report_generation")
