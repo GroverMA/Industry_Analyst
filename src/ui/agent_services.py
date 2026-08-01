@@ -17,6 +17,7 @@ from src.services.future_intelligence import FutureIntelligenceService
 from src.services.industry_analysis import IndustryAnalysisService
 from src.services.research_planning import ResearchPlanningService
 from src.services.report_generation import ReportGenerationService
+from src.services.reviewer_orchestration import ReviewerOrchestrationService
 
 
 def research_planning_service() -> ResearchPlanningService:
@@ -27,7 +28,7 @@ def research_planning_service() -> ResearchPlanningService:
     )
 
 
-EVIDENCE_SERVICE_CACHE_VERSION = "research-studio-v2"
+EVIDENCE_SERVICE_CACHE_VERSION = "reviewer-report-first-v1"
 
 
 @st.cache_resource(show_spinner=False)
@@ -88,4 +89,22 @@ def action_planning_service() -> ActionPlanningService:
     return ActionPlanningService(
         model=HKGAIModelProvider(settings),
         sop=load_active_sop(),
+    )
+
+
+def reviewer_orchestration_service() -> ReviewerOrchestrationService:
+    """Build the report-first Reviewer pipeline from the same production services.
+
+    The orchestration layer uses temporary approved copies only while satisfying
+    downstream service contracts.  Returned artifacts remain pending review.
+    """
+
+    return ReviewerOrchestrationService(
+        planning=research_planning_service(),
+        evidence=evidence_collection_service(),
+        industry=industry_analysis_service(),
+        future=future_intelligence_service(),
+        report=report_generation_service(),
+        company=company_assessment_service(),
+        action=action_planning_service(),
     )

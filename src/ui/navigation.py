@@ -22,6 +22,13 @@ from src.state.session import (
     queue_page_navigation,
     set_project,
 )
+from src.state.user_role import (
+    ROLE_LABELS,
+    ROLE_NOTES,
+    UserRole,
+    get_user_role,
+    set_user_role,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -282,8 +289,15 @@ def _render_project_organizer(catalog: dict, project: ProjectState | None) -> No
 
 def _render_workspace_navigation(project: ProjectState) -> str:
     st.markdown('<div class="ia-sidebar-section">当前项目工作台</div>', unsafe_allow_html=True)
-    available_pages = list(PAGES)
-    if project.company_strategy_enabled:
+    role = get_user_role(st.session_state) or UserRole.CONSULTANT
+    if role == UserRole.REVIEWER:
+        reviewer_keys = {"home", "research_studio"}
+        if project.company_strategy_enabled:
+            reviewer_keys.add("enterprise_sensing")
+        available_pages = [page for page in PAGES if page.key in reviewer_keys]
+    else:
+        available_pages = list(PAGES)
+    if project.company_strategy_enabled and role == UserRole.CONSULTANT:
         available_pages = [
             page for page in available_pages
             if page.key not in {"research_brief", "workflow"}
@@ -292,6 +306,9 @@ def _render_workspace_navigation(project: ProjectState) -> str:
     labels = {page.key: f"{page.label} · {page.short_label}" for page in available_pages}
     if project.company_strategy_enabled:
         labels["decision_report"] = "Enterprise Report · 企业决策报告"
+    if role == UserRole.REVIEWER:
+        labels["research_studio"] = "Review Workspace · 报告审阅工作台"
+        labels["enterprise_sensing"] = "Enterprise Inputs · 企业资料"
     current = st.session_state.get(ACTIVE_PAGE_KEY, "research_studio")
     if current not in keys:
         st.session_state[ACTIVE_PAGE_KEY] = "research_studio"
@@ -327,6 +344,30 @@ def _render_workspace_navigation(project: ProjectState) -> str:
     return selected
 
 
+def _render_role_switcher() -> None:
+    role = get_user_role(st.session_state) or UserRole.CONSULTANT
+    with st.popover(
+        f"当前身份 · {ROLE_LABELS[role]}",
+        width="stretch",
+        help="切换身份不会清除项目或研究结果",
+    ):
+        st.caption(ROLE_NOTES[role])
+        st.markdown("**切换工作身份**")
+        for option in UserRole:
+            if st.button(
+                f"{ROLE_LABELS[option]} · {ROLE_NOTES[option]}",
+                key=f"switch_role_{option.value}",
+                width="stretch",
+                type="primary" if option == role else "secondary",
+                disabled=option == role,
+            ):
+                set_user_role(st.session_state, option)
+                st.session_state[ACTIVE_PAGE_KEY] = (
+                    "research_studio" if st.session_state.get("industry_analyst_project") else "home"
+                )
+                st.rerun()
+
+
 def render_sidebar(project: ProjectState | None, catalog: dict) -> str:
     with st.sidebar:
         st.markdown(
@@ -338,6 +379,7 @@ def render_sidebar(project: ProjectState | None, catalog: dict) -> str:
             """,
             unsafe_allow_html=True,
         )
+        _render_role_switcher()
         if st.button("新建研究", type="primary", width="stretch", key="new_research_sidebar"):
             clear_project(st.session_state)
             st.rerun()

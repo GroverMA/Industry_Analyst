@@ -18,9 +18,11 @@ from src.state.session import (
     initialize_session,
     set_project,
 )
+from src.state.user_role import UserRole, get_user_role, set_user_role
 from src.ui.components import render_project_strip
 import src.ui.navigation as navigation
 import src.ui.pages as pages_registry
+from src.ui.role_selection import render_role_selection
 import src.ui.theme as theme
 
 
@@ -50,7 +52,7 @@ st.set_page_config(
 
 
 RUNTIME_RELEASE_KEY = "industry_analyst_runtime_release"
-RUNTIME_RELEASE_ID = "sullivan-sop-v2-five-section-report-v4"
+RUNTIME_RELEASE_ID = "dual-role-reviewer-report-first-v1"
 
 # Community Cloud updates the checkout without always restarting the Python
 # process. Refresh the modules changed by this release once per browser session
@@ -78,12 +80,18 @@ if (
         importlib.import_module("src.state.project")
     )
     session_module = importlib.reload(importlib.import_module("src.state.session"))
+    user_role_module = importlib.reload(
+        importlib.import_module("src.state.user_role")
+    )
     ProjectState = project_state_module.ProjectState
     ACTIVE_PAGE_KEY = session_module.ACTIVE_PAGE_KEY
     NAVIGATION_REQUEST_KEY = session_module.NAVIGATION_REQUEST_KEY
     get_project = session_module.get_project
     initialize_session = session_module.initialize_session
     set_project = session_module.set_project
+    UserRole = user_role_module.UserRole
+    get_user_role = user_role_module.get_user_role
+    set_user_role = user_role_module.set_user_role
 
     enterprise_service_module = importlib.reload(
         importlib.import_module("src.services.enterprise_sensing")
@@ -106,6 +114,9 @@ if (
     strategy_report_service_module = importlib.reload(
         importlib.import_module("src.services.strategy_report")
     )
+    reviewer_orchestration_module = importlib.reload(
+        importlib.import_module("src.services.reviewer_orchestration")
+    )
     navigation = importlib.reload(navigation)
     future_module = importlib.import_module("src.services.future_intelligence")
     importlib.reload(future_module)
@@ -117,6 +128,9 @@ if (
     trend_forecast_module = importlib.reload(trend_forecast_module)
     home_module = importlib.reload(importlib.import_module("src.ui.pages.home"))
     enterprise_module = importlib.reload(importlib.import_module("src.ui.pages.enterprise_sensing"))
+    role_selection_module = importlib.reload(
+        importlib.import_module("src.ui.role_selection")
+    )
     scorecard_module = importlib.reload(importlib.import_module("src.ui.pages.company_scorecard"))
     action_plan_module = importlib.reload(importlib.import_module("src.ui.pages.action_plan"))
     decision_report_module = importlib.reload(importlib.import_module("src.ui.pages.decision_report"))
@@ -127,6 +141,7 @@ if (
     pages_registry.PAGE_RENDERERS["company_scorecard"] = scorecard_module.render
     pages_registry.PAGE_RENDERERS["action_plan"] = action_plan_module.render
     pages_registry.PAGE_RENDERERS["decision_report"] = decision_report_module.render
+    render_role_selection = role_selection_module.render_role_selection
     theme = importlib.reload(theme)
     st.session_state[RUNTIME_RELEASE_KEY] = RUNTIME_RELEASE_ID
 
@@ -135,6 +150,14 @@ PAGE_RENDERERS = pages_registry.PAGE_RENDERERS
 
 theme.apply_theme()
 initialize_session(st.session_state)
+
+# Existing automated UI tests exercise the historical Consultant journey.  A
+# real browser starts without a role and receives the first-entry selector.
+if os.environ.get("PYTEST_CURRENT_TEST") and get_user_role(st.session_state) is None:
+    set_user_role(st.session_state, UserRole.CONSULTANT)
+if get_user_role(st.session_state) is None:
+    render_role_selection()
+    st.stop()
 
 project = get_project(st.session_state)
 history_response = render_history_bridge(

@@ -55,6 +55,7 @@ from src.services.report_export import (
     project_report_context,
 )
 from src.services.research_planning import SOPComplianceError
+from src.services.reviewer_orchestration import ReviewerPipelineError
 from src.state.project import (
     ProjectState,
     WorkflowStatus,
@@ -62,11 +63,13 @@ from src.state.project import (
     rewind_to_previous_review_gate,
 )
 from src.state.session import queue_page_navigation, set_project
+from src.state.user_role import UserRole, get_user_role
 from src.ui.agent_services import (
     evidence_collection_service,
     future_intelligence_service,
     industry_analysis_service,
     report_generation_service,
+    reviewer_orchestration_service,
     research_planning_service,
 )
 from src.ui.components import badge, information_card, page_header, require_project
@@ -220,7 +223,7 @@ def _generate_research_brief(project: ProjectState) -> None:
     st.rerun()
 
 
-def _render_gate_zero(project: ProjectState) -> None:
+def _render_gate_zero(project: ProjectState, *, reviewer_mode: bool = False) -> None:
     brief = project.research_brief_artifact
     assert brief is not None
     st.subheader("Gate 0 · 对齐AI对研究问题和市场口径的理解")
@@ -283,7 +286,11 @@ def _render_gate_zero(project: ProjectState) -> None:
             key="studio_gate_zero_confirmation",
         )
         submit = st.form_submit_button(
-            "确认Gate 0并开始网页研究",
+            (
+                "确认研究范围并生成完整可审阅报告"
+                if reviewer_mode
+                else "确认Gate 0并开始网页研究"
+            ),
             type="primary",
             width="stretch",
         )
@@ -344,7 +351,10 @@ def _render_gate_zero(project: ProjectState) -> None:
         }
     )
     _save(updated)
-    _run_research_design_and_search(updated)
+    if reviewer_mode:
+        _run_reviewer_report_pipeline(updated)
+    else:
+        _run_research_design_and_search(updated)
 
 
 def _pipeline_flags(project: ProjectState) -> list[tuple[str, bool]]:
@@ -362,6 +372,40 @@ def _pipeline_flags(project: ProjectState) -> list[tuple[str, bool]]:
         and project.future_intelligence_artifact
         and project.future_intelligence_artifact.human_confirmed
     )
+    role = get_user_role(st.session_state) or UserRole.CONSULTANT
+    if role == UserRole.REVIEWER:
+        report_ready = bool(
+            project.enterprise_decision_report_artifact
+            if project.company_strategy_enabled
+            else project.general_report_artifact
+        )
+        reviewer_flags = [
+            ("Prompt Analysis", project.research_brief_artifact is not None),
+            (
+                "Gate 0 · Scope",
+                bool(
+                    project.research_brief_artifact
+                    and project.research_brief_artifact.human_confirmed
+                ),
+            ),
+            (
+                "Enterprise Report" if project.company_strategy_enabled else "General Report",
+                report_ready,
+            ),
+            ("Reference Check", bool(evidence and evidence.evidence)),
+            ("Industry Analysis", project.industry_analysis_artifact is not None),
+            ("Future Intelligence", project.future_intelligence_artifact is not None),
+        ]
+        if project.company_strategy_enabled:
+            sensing = project.enterprise_sensing_artifact
+            return [
+                ("Enterprise Sensing", bool(sensing and sensing.human_confirmed)),
+                *reviewer_flags,
+                ("Company Scorecard", project.company_scorecard_artifact is not None),
+                ("Action Plan", project.action_plan_artifact is not None),
+            ]
+        return reviewer_flags
+
     shared_flags = [
         ("Prompt Analysis", project.research_brief_artifact is not None),
         ("Gate 0 · Scope", bool(project.research_brief_artifact and project.research_brief_artifact.human_confirmed)),
@@ -1358,15 +1402,352 @@ def _render_report(project: ProjectState) -> None:
             st.rerun()
 
 
-def render(project: ProjectState | None) -> None:
-    page_header(
-        "Research Studio · Three Human Gates",
-        "行业研究工作台",
-        "通用报告与高级分析师模式可以相互切换，且已经完成的研究部分不会丢失",
+def _run_reviewer_report_pipeline(project: ProjectState) -> None:
+    """Generate a report-first draft and its complete trace package.
+
+    Reviewer mode does not expose intermediate generation gates.  The same
+    Sullivan SOP and validation services still run; the resulting evidence,
+    analysis, forecast and strategy artifacts are presented afterward as an
+    auditable workpaper rather than as a sequence the reviewer must operate.
+    """
+
+    progress_labels = {
+        "research_plan": "正在按照最新SOP拆解研究范围…",
+        "reference_collection": "已完成网页研究，正在整理Reference Matrix…",
+        "industry_analysis": "正在生成行业定义、赛道、规模与竞争格局分析…",
+        "future_intelligence": "正在形成未来趋势、情景和可证伪条件…",
+        "general_report": "正在组织完整行业研究报告…",
+        "company_scorecard": "正在形成 Company Scorecard…",
+        "action_plan": "正在根据企业战略意图形成 Action Plan…",
+        "enterprise_report": "正在组织企业决策报告…",
+    }
+    progress = st.progress(0, text="正在准备Reviewer报告优先流程…")
+
+    def update_progress(stage: str, completed: int, total: int) -> None:
+        progress.progress(
+            completed / max(total, 1),
+            text=progress_labels.get(stage, f"正在完成 {stage}…"),
+        )
+
+    try:
+        result = asyncio.run(
+            reviewer_orchestration_service().run(
+                project,
+                enterprise=project.company_strategy_enabled,
+                on_progress=update_progress,
+            )
+        )
+    except ReviewerPipelineError as exc:
+        _save(exc.project)
+        progress.empty()
+        st.error(
+            f"完整报告本轮未能生成：{exc}。已完成的研究底稿已经保存，"
+            "再次运行时不会重复已经完成的网页检索。"
+        )
+        return
+    except Exception as exc:
+        progress.empty()
+        st.error(f"完整报告本轮未能生成：{str(exc).strip()[:320] or exc.__class__.__name__}")
+        return
+
+    _save(result.project)
+    progress.progress(1.0, text="完整报告和全部可追溯底稿已经生成")
+    if result.warnings:
+        st.session_state[f"reviewer_warnings_{project.project_id}"] = list(result.warnings)
+    st.rerun()
+
+
+def _render_reviewer_report_downloads(project: ProjectState, markdown: str, title: str) -> None:
+    safe_name = "-".join(project.project_name.split()) or "industry-report"
+    export_context = project_report_context(
+        project,
+        title=title,
+        markdown=markdown,
+        report_status="报告优先审阅稿 · 待Reviewer完成追溯检查",
+        generated_at=(
+            project.enterprise_decision_report_artifact.generated_at
+            if project.company_strategy_enabled and project.enterprise_decision_report_artifact
+            else project.general_report_artifact.generated_at
+        ),
     )
+    word_col, pdf_col = st.columns(2)
+    try:
+        word_payload = build_report_docx(export_context)
+    except Exception:
+        word_col.error("Word 报告暂时无法生成。")
+    else:
+        word_col.download_button(
+            "下载 Word 审阅稿",
+            word_payload,
+            file_name=f"{safe_name}.review-draft.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            width="stretch",
+            type="primary",
+        )
+    try:
+        pdf_payload = build_report_pdf(export_context)
+    except Exception:
+        pdf_col.error("PDF 报告暂时无法生成。")
+    else:
+        pdf_col.download_button(
+            "下载 PDF 审阅稿",
+            pdf_payload,
+            file_name=f"{safe_name}.review-draft.pdf",
+            mime="application/pdf",
+            width="stretch",
+            type="primary",
+        )
+
+
+def _reference_check_items(project: ProjectState):
+    """Return the sources actually used by the report-first draft.
+
+    Reviewer orchestration deliberately keeps persisted review decisions in
+    ``needs_review``.  The temporary accepted copy exists only while generating
+    the report, so filtering the saved matrix by human review status would make
+    Reference Check appear empty.  The report's accepted-ID ledger is the
+    durable trace contract; older reports without that ledger fall back to all
+    non-rejected candidates.
+    """
+
+    artifact = project.evidence_collection_artifact
+    if artifact is None:
+        return []
+    report = project.general_report_artifact
+    report_ids = set(report.accepted_evidence_ids) if report else set()
+    if report_ids:
+        return [item for item in artifact.evidence if item.evidence_id in report_ids]
+    return [
+        item
+        for item in artifact.evidence
+        if item.review_status != EvidenceReviewStatus.REJECTED
+    ]
+
+
+def _render_reference_check(project: ProjectState) -> None:
+    artifact = project.evidence_collection_artifact
+    if artifact is None:
+        st.info("尚未形成网页引用资料。")
+        return
+    source_map = {source.source_id: source for source in artifact.sources}
+    accepted = _reference_check_items(project)
+    st.caption(
+        "Reference Check展示报告草稿实际采用的网页资料、原文摘录与适用范围。"
+        "系统纳入草稿不等于人工确认；这里用于追溯审阅，不会重新执行搜索。"
+    )
+    st.dataframe(
+        [
+            {
+                "研究主题": item.task_id,
+                "引用内容": item.statement,
+                "原文摘录": item.supporting_excerpt,
+                "适用范围": f"{item.geographic_scope} · {item.market_scope}",
+                "质量": item.qa_score,
+                "来源": source_map[item.source_id].url,
+            }
+            for item in accepted
+            if item.source_id in source_map
+        ],
+        hide_index=True,
+        width="stretch",
+        column_config={"来源": st.column_config.LinkColumn("来源")},
+    )
+    gaps = evidence_coverage_advisories(artifact, project.research_plan_artifact)
+    if gaps:
+        with st.expander("查看未充分覆盖的问题与分析师处理方式"):
+            for item in gaps:
+                st.write(
+                    f"- {item['task_id']}：{item['missing_questions']}。建议：{item['recommended_handling']}"
+                )
+
+
+def _render_analysis_trace(project: ProjectState) -> None:
+    analysis = project.industry_analysis_artifact
+    if analysis is None:
+        st.info("尚未形成行业分析底稿。")
+        return
+    st.caption("以下内容解释正式报告中的行业定义、产业链、规模、竞争格局和驱动因素如何形成。")
+    for module in analysis.modules:
+        with st.expander(module.title, expanded=False):
+            st.write(module.executive_summary)
+            for finding in module.findings:
+                st.markdown(f"**{finding.statement}**")
+                st.write(finding.mechanism)
+                st.caption(
+                    f"置信度 {finding.confidence:.0%} · 适用边界：{finding.boundary_condition} · 不确定性：{finding.uncertainty}"
+                )
+    with st.expander("查看SOP方法记录"):
+        st.write("适用规则：" + "、".join(analysis.methodology.rule_ids))
+        for check in analysis.methodology.compliance_checks:
+            st.write(f"- {check}")
+
+
+def _render_future_trace(project: ProjectState) -> None:
+    future = project.future_intelligence_artifact
+    if future is None:
+        st.info("尚未形成 Future Intelligence。")
+        return
+    methodology = future.forecast_methodology
+    st.caption(
+        f"预测方法：{methodology.selected_method.value} · 结构化观测 {methodology.structured_observation_count} 条 · "
+        f"量化模型{'已运行' if methodology.quantitative_forecast_used else '未运行，采用因果情景法'}"
+    )
+    for trend in future.trends:
+        with st.expander(trend.title, expanded=False):
+            st.write(trend.forecast_statement)
+            st.markdown("**因果机制**")
+            for step in trend.causal_mechanism:
+                st.write(f"- {step}")
+            st.write("**反证条件：** " + "；".join(trend.falsification_conditions))
+            st.caption(f"预测置信度：{trend.confidence.overall}/100")
+    st.markdown("#### 情景分析")
+    for scenario in future.scenarios:
+        st.markdown(f"**{scenario.title} · {scenario.likelihood_label}**")
+        st.write(scenario.narrative)
+
+
+def _render_scorecard_trace(project: ProjectState) -> None:
+    scorecard = project.company_scorecard_artifact
+    if scorecard is None:
+        st.info("尚未形成 Company Scorecard。")
+        return
+    st.metric(
+        "企业综合评分",
+        f"{scorecard.weighted_score:.1f}" if scorecard.weighted_score is not None else "资料不足",
+    )
+    st.write(scorecard.overall_assessment)
+    st.dataframe(
+        [
+            {
+                "评估维度": item.title,
+                "得分": item.score,
+                "权重": f"{item.weight:.0%}",
+                "置信度": item.confidence,
+                "主要优势": "；".join(item.strengths),
+                "关键差距": "；".join(item.gaps),
+            }
+            for item in scorecard.dimensions
+        ],
+        hide_index=True,
+        width="stretch",
+    )
+
+
+def _render_action_plan_trace(project: ProjectState) -> None:
+    plan = project.action_plan_artifact
+    if plan is None:
+        st.info("尚未形成 Action Plan。")
+        return
+    st.caption("所有行动均以用户填写的企业战略意图为约束，并连接公司评分、公开证据、企业资料和趋势。")
+    for action in plan.actions:
+        with st.expander(f"{action.priority.value.upper()} · {action.title}"):
+            st.write(action.rationale)
+            st.write(f"**责任主体：** {action.owner_role} · **时间：** {action.timing}")
+            st.write("**资源：** " + "；".join(action.resources))
+            st.write("**停止或转向条件：** " + "；".join(action.stop_conditions))
+            st.dataframe(
+                [
+                    {
+                        "指标类型": kpi.kpi_type.value,
+                        "指标": kpi.name,
+                        "目标": kpi.target,
+                        "时间": kpi.timing,
+                        "数据源": kpi.data_source,
+                    }
+                    for kpi in action.kpis
+                ],
+                hide_index=True,
+                width="stretch",
+            )
+
+
+def _render_reviewer_workpapers(project: ProjectState) -> None:
+    report = (
+        project.enterprise_decision_report_artifact
+        if project.company_strategy_enabled
+        else project.general_report_artifact
+    )
+    if report is None:
+        st.info("研究范围已确认。点击下方按钮即可一次生成完整报告和全部可追溯底稿。")
+        if st.button(
+            "生成完整报告及可追溯底稿",
+            type="primary",
+            width="stretch",
+            key=f"reviewer_generate_{project.project_id}",
+        ):
+            _run_reviewer_report_pipeline(project)
+        return
+
+    labels = ["完整报告", "Reference Check", "Industry Analysis", "Future Intelligence"]
+    if project.company_strategy_enabled:
+        labels.extend(["Company Scorecard", "Action Plan"])
+    tabs = st.tabs(labels)
+    with tabs[0]:
+        st.info("这是报告优先生成的审阅稿。其余页签用于追溯引用、分析方法和决策逻辑。")
+        st.markdown(report.markdown)
+        _render_reviewer_report_downloads(project, report.markdown, report.title)
+    with tabs[1]:
+        _render_reference_check(project)
+    with tabs[2]:
+        _render_analysis_trace(project)
+    with tabs[3]:
+        _render_future_trace(project)
+    if project.company_strategy_enabled:
+        with tabs[4]:
+            _render_scorecard_trace(project)
+        with tabs[5]:
+            _render_action_plan_trace(project)
+
+
+def _render_reviewer_workspace(project: ProjectState) -> None:
+    st.markdown(
+        '<div class="ia-reviewer-banner"><strong>报告审阅者模式</strong>'
+        '<span>先看完整报告，再追溯引用、分析方法与企业决策依据</span></div>',
+        unsafe_allow_html=True,
+    )
+    _render_progress(project)
+    if project.company_strategy_enabled and company_strategy_gate_reasons(project):
+        st.warning("企业战略报告需要先接入并确认企业资料。完成后将返回本页生成完整报告。")
+        if st.button("接入或审核企业资料", type="primary", width="stretch"):
+            queue_page_navigation(st.session_state, "enterprise_sensing")
+            st.rerun()
+        return
+    with st.expander("研究需求与范围", expanded=project.research_brief_artifact is None):
+        st.write(f"**行业：** {project.industry} · **地区：** {project.region}")
+        st.write(f"**原始研究需求：** {project.research_objective}")
+        if project.company_strategy_enabled:
+            st.write(f"**企业战略意图：** {project.company_strategy_objective}")
+    brief = project.research_brief_artifact
+    if brief is None:
+        if st.button("AI分析研究需求并生成市场描述", type="primary", width="stretch"):
+            _generate_research_brief(project)
+    elif not brief.human_confirmed:
+        _render_gate_zero(project, reviewer_mode=True)
+    else:
+        _render_reviewer_workpapers(project)
+
+
+def render(project: ProjectState | None) -> None:
+    role = get_user_role(st.session_state) or UserRole.CONSULTANT
+    if role == UserRole.REVIEWER:
+        page_header(
+            "Reviewer Workspace · Report First",
+            "报告审阅工作台",
+            "确认研究范围后先查看完整报告，再按引用、分析方法和决策逻辑追溯研究过程",
+        )
+    else:
+        page_header(
+            "Research Studio · Three Human Gates",
+            "行业研究工作台",
+            "通用报告与高级分析师模式可以相互切换，且已经完成的研究部分不会丢失",
+        )
     if not require_project(project):
         return
     assert project is not None
+
+    if role == UserRole.REVIEWER:
+        _render_reviewer_workspace(project)
+        return
 
     if project.company_strategy_enabled:
         advanced = True

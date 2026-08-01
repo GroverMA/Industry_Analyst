@@ -27,6 +27,7 @@ from src.services.enterprise_sensing import (
 )
 from src.state.project import ProjectState, WorkflowStatus
 from src.state.session import queue_page_navigation, set_project
+from src.state.user_role import UserRole, get_user_role
 from src.ui.components import badge, information_card, page_header, require_project
 
 
@@ -402,9 +403,21 @@ def render(project: ProjectState | None) -> None:
     current = project.model_copy(update={"enterprise_sensing_artifact": artifact})
     reasons = company_strategy_gate_reasons(current)
     if not reasons:
-        st.success("企业战略资格已通过。趋势与情景批准后，可进入Company Scorecard。")
-        if st.button("前往 Company Scorecard", width="stretch"):
-            queue_page_navigation(st.session_state, "company_scorecard")
+        reviewer_mode = get_user_role(st.session_state) == UserRole.REVIEWER
+        st.success(
+            "企业资料已确认，可以返回报告审阅工作台生成完整企业报告。"
+            if reviewer_mode
+            else "企业战略资格已通过。趋势与情景批准后，可进入Company Scorecard。"
+        )
+        if st.button(
+            "返回报告审阅工作台" if reviewer_mode else "前往 Company Scorecard",
+            width="stretch",
+            type="primary" if reviewer_mode else "secondary",
+        ):
+            queue_page_navigation(
+                st.session_state,
+                "research_studio" if reviewer_mode else "company_scorecard",
+            )
             st.rerun()
     else:
         st.warning("Company Scorecard / Action Plan仍锁定：\n\n" + "\n\n".join(f"- {reason}" for reason in reasons))

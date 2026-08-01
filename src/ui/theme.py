@@ -140,6 +140,27 @@ def apply_theme() -> None:
         }}
         .ia-hero h1 {{ margin: 0; font-size: clamp(2rem, 3.5vw, 3rem); line-height: 1.08; }}
         .ia-hero p {{ max-width: 760px; font-size: 1.02rem; line-height: 1.75; margin: 1rem 0 0; }}
+        .ia-role-hero {{
+            max-width: 820px; margin: 8vh auto 2rem; text-align: center;
+        }}
+        .ia-role-hero h1 {{
+            margin: .2rem 0 .8rem; font-size: clamp(2rem, 4vw, 3rem);
+        }}
+        .ia-role-hero p {{
+            max-width: 680px; margin: 0 auto; line-height: 1.75;
+        }}
+        .ia-reviewer-banner {{
+            display: flex; justify-content: space-between; gap: 1rem; align-items: center;
+            border: 1px solid #CFE0E3; border-radius: 12px;
+            background: #F1F7F7; padding: .85rem 1rem; margin: .55rem 0 1rem;
+        }}
+        .ia-reviewer-banner strong {{ color: var(--ia-text); font-size: .86rem; }}
+        .ia-reviewer-banner span {{ color: var(--ia-muted); font-size: .78rem; }}
+        .ia-trace-card {{
+            border: 1px solid var(--ia-border); border-radius: 12px;
+            background: rgba(255,255,255,.76); padding: .95rem 1rem; margin-bottom: .7rem;
+        }}
+        .ia-trace-card strong {{ color: var(--ia-text); }}
         .ia-page-head {{ margin-bottom: 1.35rem; }}
         .ia-page-head h1 {{ font-size: 2rem; margin: .25rem 0 .35rem; }}
         .ia-page-head p {{ margin: 0; max-width: 820px; line-height: 1.7; }}
