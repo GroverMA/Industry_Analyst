@@ -1,0 +1,183 @@
+{
+  "sop_id": "sullivan_industry_research",
+  "display_name": "沙利文行业研究 SOP",
+  "version": "2.0.0",
+  "pack_type": "methodology",
+  "locked": true,
+  "description": "全局行业研究方法底座。所有通用报告、案例展示及高级分析师工作台共同使用；既有版本保留用于项目追溯。",
+  "rules": [
+    {
+      "rule_id": "SUL-BRIEF-001",
+      "title": "先冻结问题、时点与研究边界",
+      "instruction": "先解释用户Prompt并冻结研究对象、地区、历史期、预测期、数据截至日、计量口径、包含项和排除项。未披露的信息标记为NOT_DISCLOSED，不得使用系统日期、默认地区或模型常识补齐。",
+      "applies_to": ["brief", "plan", "analysis", "future", "report"]
+    },
+    {
+      "rule_id": "SUL-DEFINE-001",
+      "title": "行业定义形成版本化市场范围契约",
+      "instruction": "行业定义必须形成可追溯的market_scope_contract，说明目标产品或服务、客户、核心功能、地理及时间范围、计量口径、上位行业、并列赛道、子赛道、纳入项、条件纳入项、排除项、相邻市场、价值链位置及限制。范围版本变化时，下游证据、规模、竞争、驱动与报告必须重新校验。",
+      "applies_to": ["brief", "plan", "analysis", "future", "report"]
+    },
+    {
+      "rule_id": "SUL-DEFINE-002",
+      "title": "定义正文遵循判断链",
+      "instruction": "正式定义按直接结论、定义背景、分类与边界逻辑、对市场规模及可比公司选择的影响组织；不得把工作底稿字段、审核标签或内部编码写入正式正文。",
+      "applies_to": ["analysis", "report"]
+    },
+    {
+      "rule_id": "SUL-TRACK-001",
+      "title": "赛道分类与产业链分开研究",
+      "instruction": "赛道先确定分类维度，再建立上位行业、同维度并列赛道、目标行业和子赛道；不同分类维度只能说明交叉关系，不得强行并列。产业链随后沿真实产品、服务、数据、资金与责任流拆解，两者不得混为一张图或一段结论。",
+      "applies_to": ["plan", "analysis", "report"]
+    },
+    {
+      "rule_id": "SUL-TRACK-002",
+      "title": "解释易混概念和跨赛道经营",
+      "instruction": "对影响市场口径、公司筛选或数据统计的易混概念说明定义维度、判断标准、交集、非交集及研究影响；企业跨赛道经营需区分目标业务、相邻赛道、上下游延伸和低协同性业务，不得将公司全部收入归入目标行业。",
+      "applies_to": ["analysis", "report"]
+    },
+    {
+      "rule_id": "SUL-CHAIN-001",
+      "title": "产业链必须解释价值获取",
+      "instruction": "按真实业务流程识别关键投入、核心活动、主要产出、直接客户、最终用户、应用场景和代表参与者，并研究商业模式、定价、成本、附加价值、盈利能力、资本强度、议价能力、壁垒、风险及利润池迁移。",
+      "applies_to": ["plan", "analysis", "future", "report"]
+    },
+    {
+      "rule_id": "SUL-CHAIN-002",
+      "title": "产业链利润与价值口径可比",
+      "instruction": "比较产业链环节时应分别判断附加价值、毛利率、经营利润率、资本回报和议价能力；只有业务、年份、地区和样本口径一致时才可比较。不得用公司整体利润率替代目标细分业务，也不得把高毛利直接等同高资本回报。",
+      "applies_to": ["analysis", "future", "report"]
+    },
+    {
+      "rule_id": "SUL-SIZE-001",
+      "title": "先统一规模口径再采集数字",
+      "instruction": "市场规模必须明确研究对象、产品与服务边界、地区、历史及预测期间、收入或实物量指标、价格和税费口径、业务口径以及新增、替换和服务需求。不同定义的数据分别保留，不得直接平均或拼接。",
+      "applies_to": ["plan", "analysis", "future", "report"]
+    },
+    {
+      "rule_id": "SUL-SIZE-002",
+      "title": "建立可复核规模模型",
+      "instruction": "根据行业经济逻辑选择自上而下、自下而上、枚举法、新增配套加后市场或分应用加总作为主方法，并至少使用一种独立方法验证。展示公式树、输入、来源、假设、覆盖率、重叠处理、历史值、预测值、CAGR及合理区间；差异必须解释，不得机械取平均。",
+      "applies_to": ["plan", "analysis", "future", "report"]
+    },
+    {
+      "rule_id": "SUL-SIZE-003",
+      "title": "预测关键变量而非机械套CAGR",
+      "instruction": "预测期分别预测客户数量、销量或装机、存量、渗透率、配置率、替换率、外包率、价格、单位价值、成本和应用结构。渗透率需有饱和上限，价格需考虑技术降本、竞争、升级和通胀，周期行业需考虑资本开支、库存和供需周期。",
+      "applies_to": ["future", "report"]
+    },
+    {
+      "rule_id": "SUL-COMP-001",
+      "title": "竞争分析先建公司池再做可比性",
+      "instruction": "先建立候选公司池、来源渠道、覆盖率和已知遗漏，再逐家公司映射目标业务。只有业务、期间、地区、指标、单位、币种和证据口径均可比时才能计算排名、份额和集中度；不得用公司总收入代替目标业务。",
+      "applies_to": ["plan", "analysis", "report"]
+    },
+    {
+      "rule_id": "SUL-COMP-002",
+      "title": "证据不足时按顺序降级",
+      "instruction": "竞争结论按行业排名或份额、指定候选池排序、竞争梯队或玩家类型、并列公司事实、无法可靠比较的顺序降级。有限样本不得称行业Top5或Top10，也不得推断整个行业集中度、阶段或趋势。",
+      "applies_to": ["analysis", "report"]
+    },
+    {
+      "rule_id": "SUL-DRIVER-001",
+      "title": "六方向广搜驱动、机会与制约",
+      "instruction": "先定义需要解释的行业结果，再从需求、供给、政策、技术、商业模式和竞争格局六个必选方向扫描；应用、基础设施、渠道、成本和资本效率作为下一级观察项。广搜后形成6至10项核心因素，正式正文选择3至5项证据最强、互不重复的因素；证据不足时明确降级，不得凑数。",
+      "applies_to": ["plan", "analysis", "future", "report"]
+    },
+    {
+      "rule_id": "SUL-DRIVER-002",
+      "title": "每项因素只围绕一条核心趋势",
+      "instruction": "每项因素按事实或外部变化、客户或系统要求、现有方案局限、目标产品或模式采用、直接变量、最终行业指标和持续验证指标建立闭合因果链。客观不存在的节点可省略但必须说明，不得从宏观口号直接跳到行业增长。",
+      "applies_to": ["analysis", "future", "report"]
+    },
+    {
+      "rule_id": "SUL-DRIVER-003",
+      "title": "双指标净影响与反馈",
+      "instruction": "每项因素分别评价相对基准情景的市场规模净影响及行业正常化平均盈利能力净影响，记录正向作用、反向作用、供需动态反馈、最终净影响、-5至+5评分、评分依据、短中长期方向、1至5置信度、1至2项敏感假设及验证指标。需求增长不得直接等同利润改善。",
+      "applies_to": ["analysis", "future", "report"]
+    },
+    {
+      "rule_id": "SUL-DRIVER-004",
+      "title": "区分结构类型和时间角色",
+      "instruction": "区分结构性、周期性和一次性因素，并区分历史驱动、当前驱动、未来机会和制约。同一事实按主要机制进入一个主类别，其他关系仅交叉引用；不得把尚需条件兑现的机会写成已发生的当前驱动。",
+      "applies_to": ["analysis", "future", "report"]
+    },
+    {
+      "rule_id": "SUL-FUTURE-001",
+      "title": "Future Intelligence采用因果与量化双轨",
+      "instruction": "趋势必须来自已观察信号、历史机制、玩家布局、技术成本、客户需求、政策支付和产业链变化。先形成因果基准、加速和受阻情景；只有存在同一口径、足够长度的结构化历史序列时，才运行时间序列或驱动变量模型，并以滚动时间验证与朴素基准比较。",
+      "applies_to": ["future", "report"]
+    },
+    {
+      "rule_id": "SUL-FUTURE-002",
+      "title": "机器学习预测必须可验证且可降级",
+      "instruction": "候选方法包括朴素基准、指数平滑、趋势回归及带正则化的驱动变量回归；按数据量、稳定性和滚动验证误差选择，报告MAE或sMAPE、验证窗口、预测区间和结构突变限制。数据不足、口径混杂或样本过短时必须降级为因果情景法，不得声称运行机器学习或输出伪精确概率。",
+      "applies_to": ["future", "report"]
+    },
+    {
+      "rule_id": "SUL-EVIDENCE-001",
+      "title": "证据状态和来源纪律",
+      "instruction": "区分FACT、INFERENCE、ASSUMPTION、NOT_FOUND、NOT_DISCLOSED、CONFLICT和USER_CONFIRMED。Tier1官方原始来源优先，Tier2协会数据库及公开方法机构可作主要依据，Tier3公司、券商和咨询材料用于补充，Tier4媒体、博客、搜索摘要和AI内容仅作线索；关键结论不能只依赖Tier4。",
+      "applies_to": ["plan", "analysis", "future", "report"]
+    },
+    {
+      "rule_id": "SUL-EVIDENCE-002",
+      "title": "工作底稿与正式报告分离",
+      "instruction": "底稿保留内部ID、来源等级、逐句溯源、评分、缺口、冲突、敏感假设和审核记录；正式报告只呈现专业结论、必要方法、自然引用和明确限制，不得暴露EVD、FND、TRD、SCN等内部编码。",
+      "applies_to": ["analysis", "future", "report"]
+    },
+    {
+      "rule_id": "SUL-REPORT-001",
+      "title": "通用报告固定五章",
+      "instruction": "正式通用行业报告必须按行业定义、行业赛道与产业链、市场或行业规模测算、竞争格局、市场驱动因素及Future Outlook五章组织。用户Prompt决定重点与篇幅，但不得变成逐题问答；执行摘要、研究限制和资料来源可作为前后附加部分。",
+      "applies_to": ["report"]
+    },
+    {
+      "rule_id": "SUL-REPORT-002",
+      "title": "正式正文分段成文",
+      "instruction": "每章使用判断性导语及若干完整段落；每段围绕一个结论，按事实、机制、影响和边界闭合。长段落应按逻辑转折拆分，章节之间保留空行，不得把底稿字段、项目符号或全部发现挤成一段。",
+      "applies_to": ["report"]
+    },
+    {
+      "rule_id": "SUL-GOV-001",
+      "title": "全产品统一方法底座",
+      "instruction": "快速通用报告、案例展示和高级分析师工作台必须使用同一SOP版本、Research Brief、Market Scope、Research Plan、Evidence Matrix和分析产物。模式只改变交互深度与企业输入，不得降低行业研究方法。",
+      "applies_to": ["all"]
+    }
+  ],
+  "constraints": {
+    "min_key_questions": 5,
+    "max_key_questions": 12,
+    "min_hypotheses": 3,
+    "min_tasks": 6,
+    "max_tasks": 10,
+    "min_human_review_gates": 3,
+    "require_inclusions_and_exclusions": true,
+    "require_counter_evidence": true,
+    "required_research_modules": [
+      "industry_definition",
+      "industry_track",
+      "value_chain",
+      "market_sizing",
+      "competitive_landscape",
+      "drivers_constraints",
+      "future_intelligence"
+    ],
+    "driver_factor_target": 4,
+    "constraint_factor_target": 4,
+    "source_tier_count": 4,
+    "historical_observation_years": 10,
+    "future_outlook_years": 5,
+    "driver_core_min": 6,
+    "driver_core_max": 10,
+    "driver_body_min": 3,
+    "driver_body_max": 5,
+    "report_section_order": [
+      "industry_definition",
+      "industry_track_value_chain",
+      "market_sizing",
+      "competitive_landscape",
+      "drivers_future_outlook"
+    ]
+  }
+}

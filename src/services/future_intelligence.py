@@ -26,6 +26,7 @@ from src.models.future import (
 from src.models.research import MethodologyTrace
 from src.providers.base import ChatMessage, ModelResponse, ProviderError
 from src.services.errors import FutureIntelligenceError
+from src.services.forecasting import build_forecast_methodology
 from src.state.project import ProjectState
 
 
@@ -90,6 +91,23 @@ TREND_CONTRACT = {
     "finding_ids": ["FND-..."],
     "counter_evidence_ids": ["EVD-..."],
     "confidence_note": "why confidence should be limited",
+    "core_trend": "one trend only",
+    "target_industry_metric": "market size, volume, penetration, price, profitability or value distribution",
+    "factor_class": "structural|cyclical|one_off",
+    "temporal_role": "historical_driver|current_driver|future_opportunity|constraint",
+    "direct_variables": ["volume|price|cost|utilization|penetration|capacity|margin"],
+    "verification_metrics": ["observable metric"],
+    "positive_effect": "positive transmission channel",
+    "negative_effect": "negative or crowding-out channel",
+    "dynamic_supply_demand_feedback": "how supply, competition or price responds over time",
+    "net_impact_summary": "net effect relative to the baseline scenario",
+    "market_size_net_impact_score": "integer -5 to 5",
+    "profitability_net_impact_score": "integer -5 to 5",
+    "short_term_direction": "positive|negative|mixed|neutral|uncertain",
+    "medium_term_direction": "positive|negative|mixed|neutral|uncertain",
+    "long_term_direction": "positive|negative|mixed|neutral|uncertain",
+    "method_confidence_score": "integer 1 to 5",
+    "sensitive_assumptions": ["one or two assumptions with the largest effect"],
 }
 
 SCENARIO_CONTRACT = {
@@ -208,7 +226,10 @@ class FutureIntelligenceService:
                     "下游应用拓展、技术与产品进步、政策与基础设施、供给与成本、商业模式与渠道"
                     "六个方向识别发展因素。每项趋势都必须串联已观察变化、历史机制、玩家布局、"
                     "技术成本、客户需求、政策支付和领先指标，并说明因素、传导机制、直接影响变量、"
-                    "行业结果和验证指标。区分结构性、周期性和一次性影响。"
+                    "行业结果和验证指标。区分结构性、周期性和一次性影响；区分历史驱动、当前驱动、"
+                    "未来机会和制约。每项只保留一条核心趋势，记录正向作用、反向作用、供需反馈和"
+                    "相对基准情景的净影响，并分别对市场规模和行业正常化平均盈利能力进行-5至+5评分。"
+                    "短期为0至2年、中期为2至5年、长期为5年以上；三个方向不得强行合并。"
                     "只输出合法JSON对象。\n\n"
                     + self.sop.prompt_context("future")
                 ),
@@ -221,7 +242,8 @@ class FutureIntelligenceService:
                     f"研究目标：{project.research_objective}\n"
                     "用户原始Prompt与已确认Research Brief：\n"
                     f"{brief.model_dump_json(exclude={'methodology', 'generated_at'}, ensure_ascii=False)}\n\n"
-                    "形成1至8项有证据基础的趋势，以及baseline、accelerated、blocked三种情景各一次。"
+                    "优先形成3至5项正文就绪且互不重复的趋势；证据不足时可以少于3项，但必须在"
+                    "forecast_gaps解释，绝不能凑数。另形成baseline、accelerated、blocked三种情景各一次。"
                     "情景只使用low、moderate、high定性可能性，不输出百分比概率。无目标企业时所有"
                     "company_exposure必须为null。趋势必须引用至少一个Evidence ID和一个Finding ID。"
                     "趋势要明确对竞争格局、商业模式和客户需求的影响。没有企业输入时，"
@@ -274,6 +296,7 @@ class FutureIntelligenceService:
                         "evidence_collection_id": evidence_artifact.artifact_id,
                         "input_evidence_ids": sorted(evidence_ids),
                         "input_finding_ids": sorted(finding_ids),
+                        "forecast_methodology": build_forecast_methodology().model_dump(),
                         "methodology": self._trace().model_dump(),
                     }
                 )
@@ -314,6 +337,9 @@ class FutureIntelligenceService:
                 "基准、加速和受阻情景完整",
                 "领先指标与反证条件完整",
                 "未输出无模型支持的精确概率",
+                "量化模型需通过结构化序列、滚动验证及朴素基准门槛",
+                "数据不足时明确降级为因果情景法",
+                "驱动因素分别评价市场规模和行业平均盈利能力净影响",
             ],
         )
 
@@ -526,6 +552,14 @@ class FutureIntelligenceService:
         valid_categories = {item.value for item in TrendCategory}
         valid_move_statuses = {item.value for item in PlayerMoveStatus}
         current_year = datetime.now(UTC).year
+        allowed_factor_classes = {"structural", "cyclical", "one_off"}
+        allowed_temporal_roles = {
+            "historical_driver",
+            "current_driver",
+            "future_opportunity",
+            "constraint",
+        }
+        allowed_directions = {"positive", "negative", "mixed", "neutral", "uncertain"}
         for trend in trends:
             if trend.get("category") not in valid_categories:
                 raise FutureIntelligenceError("趋势category无效")
@@ -551,9 +585,45 @@ class FutureIntelligenceService:
                 "leading_indicators",
                 "falsification_conditions",
                 "uncertainties",
+                "direct_variables",
+                "verification_metrics",
+                "sensitive_assumptions",
             )
             if any(not isinstance(trend.get(key), list) or not trend[key] for key in required_lists):
                 raise FutureIntelligenceError("趋势缺少信号、机制、假设、指标或反证")
+            required_text = (
+                "core_trend",
+                "target_industry_metric",
+                "positive_effect",
+                "negative_effect",
+                "dynamic_supply_demand_feedback",
+                "net_impact_summary",
+            )
+            if any(not str(trend.get(key) or "").strip() for key in required_text):
+                raise FutureIntelligenceError("趋势缺少单一核心趋势、双向作用、动态反馈或净影响")
+            if trend.get("factor_class") not in allowed_factor_classes:
+                raise FutureIntelligenceError("趋势factor_class无效")
+            if trend.get("temporal_role") not in allowed_temporal_roles:
+                raise FutureIntelligenceError("趋势temporal_role无效")
+            for score_key in (
+                "market_size_net_impact_score",
+                "profitability_net_impact_score",
+            ):
+                score = trend.get(score_key)
+                if isinstance(score, bool) or not isinstance(score, int) or not -5 <= score <= 5:
+                    raise FutureIntelligenceError("趋势双指标评分必须为-5至+5的整数")
+            for direction_key in (
+                "short_term_direction",
+                "medium_term_direction",
+                "long_term_direction",
+            ):
+                if trend.get(direction_key) not in allowed_directions:
+                    raise FutureIntelligenceError("趋势短中长期方向无效")
+            confidence_score = trend.get("method_confidence_score")
+            if isinstance(confidence_score, bool) or not isinstance(confidence_score, int) or not 1 <= confidence_score <= 5:
+                raise FutureIntelligenceError("趋势方法置信度必须为1至5的整数")
+            if not 1 <= len(trend["sensitive_assumptions"]) <= 2:
+                raise FutureIntelligenceError("趋势必须记录1至2项最敏感假设")
 
         scenarios = payload.get("scenarios")
         if not isinstance(scenarios, list) or len(scenarios) != 3:

@@ -320,6 +320,25 @@ def render(project: ProjectState | None) -> None:
         return
 
     render_methodology_trace(artifact.methodology)
+    method = artifact.forecast_methodology
+    method_labels = {
+        "causal_scenario": "因果情景法",
+        "naive_baseline": "朴素基准",
+        "exponential_smoothing": "指数平滑",
+        "trend_regression": "趋势回归",
+        "regularized_driver_regression": "正则化驱动变量回归",
+    }
+    with st.container(border=True):
+        st.markdown("#### 预测方法门")
+        method_cols = st.columns(3)
+        method_cols[0].metric("本轮方法", method_labels[method.selected_method.value])
+        method_cols[1].metric("同口径观测", method.structured_observation_count)
+        method_cols[2].metric(
+            "量化模型",
+            "已运行" if method.quantitative_forecast_used else "未满足数据门槛",
+        )
+        st.write(method.selection_rationale)
+        st.caption(method.validation_design + " " + method.prediction_interval)
     if artifact.forecast_mode == "general":
         st.info("当前为General Forecast。未接入企业渠道、客户、销售或专家一手信号，企业信号支持度不会被虚构评分。")
 

@@ -260,20 +260,31 @@ class IndustryAnalysisService:
         }
         module_rules = {
             "market_value_chain": (
-                "同时区分行业赛道分类与上中下游价值链；每项判断通过"
+                "先形成行业范围定义，再分别研究赛道和产业链。赛道须使用同一分类维度建立"
+                "上位行业、并列赛道、目标行业和子赛道，解释影响口径的交叉概念；产业链须沿"
+                "真实产品、服务、数据与资金流拆解，区分直接客户、最终用户和应用，并解释各环节"
+                "商业模式、价值、利润池、壁垒与风险。每项判断通过"
                 "comparison_dimensions.value_chain_position说明位置。"
             ),
             "market_status": (
-                "在证据允许时说明市场规模口径与Top-down、Bottom-up或枚举法；"
-                "无法测算时明确缺失数据、公式或假设。"
+                "先统一对象、地区、年份、价值或实物量、价格、税费、业务以及新增/替换/服务口径。"
+                "按行业经济逻辑选择Top-down、Bottom-up、枚举、新增配套加后市场或分应用加总作为"
+                "主方法，并至少提出一种独立验证方法；说明公式、数据输入、假设、覆盖率、重叠、"
+                "历史及预测结果与CAGR。不得机械套用单一CAGR；无法测算时明确缺失变量和合理区间。"
             ),
             "competitive_landscape": (
-                "坚持同年、同地区、同细分业务、同指标；每个主体必须填写"
-                "relationship_type与comparison_basis，不能因名称相似认定竞争。"
+                "先建立候选公司池与已知遗漏，再映射目标业务；坚持同年、同地区、同细分业务、"
+                "同指标、同单位和同币种。每个主体必须填写relationship_type与comparison_basis。"
+                "证据不足时按行业份额、候选池排序、竞争梯队、并列事实、无法比较的顺序降级，"
+                "有限样本不得称行业Top5或Top10。"
             ),
             "drivers_constraints": (
                 "按机制区分driver、constraint、enabling_condition、mixed或conditional，"
-                "并填写impact_direction、完整因果链、因素类型和可监测指标。"
+                "并填写impact_direction。每项仅保留一条核心趋势，因果链须覆盖事实变化、客户或"
+                "系统要求、方案局限（如适用）、采用变化、直接变量、最终指标和验证指标。"
+                "comparison_dimensions还须记录factor_class、temporal_role、positive_effect、"
+                "negative_effect、supply_demand_feedback、market_size_score、profitability_score、"
+                "short_medium_long_direction、confidence_1_to_5和sensitive_assumptions。"
             ),
             "commercial_logic": (
                 "解释价值创造、付费方、客户需求、渠道、利润来源、风险与壁垒，"

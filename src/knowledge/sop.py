@@ -14,7 +14,7 @@ DEFAULT_SOP_PATH = (
     Path(__file__).resolve().parents[2]
     / "knowledge_packs"
     / "research_sop"
-    / "sullivan_industry_research_v1.json"
+    / "sullivan_industry_research_v2.json"
 )
 
 
@@ -38,6 +38,21 @@ class SOPConstraints(BaseModel):
     driver_factor_target: int = 4
     constraint_factor_target: int = 4
     source_tier_count: int = 4
+    historical_observation_years: int = 10
+    future_outlook_years: int = 5
+    driver_core_min: int = 6
+    driver_core_max: int = 10
+    driver_body_min: int = 3
+    driver_body_max: int = 5
+    report_section_order: list[str] = Field(
+        default_factory=lambda: [
+            "industry_definition",
+            "industry_track_value_chain",
+            "market_sizing",
+            "competitive_landscape",
+            "drivers_future_outlook",
+        ]
+    )
 
 
 class ResearchSOPPack(BaseModel):

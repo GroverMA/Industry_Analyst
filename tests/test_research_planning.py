@@ -121,7 +121,7 @@ def test_active_sop_is_locked_and_fingerprinted() -> None:
     assert sop.locked is True
     assert sop.content_hash
     assert sop.sop_id == "sullivan_industry_research"
-    assert sop.version == "1.0.0"
+    assert sop.version == "2.0.0"
     assert "SUL-DEFINE-001" in sop.rule_ids
     assert "SUL-SIZE-003" in sop.rule_ids
 

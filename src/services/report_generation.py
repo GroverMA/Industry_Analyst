@@ -143,6 +143,9 @@ class ReportGenerationService:
                     "机构研究语体：章节标题下使用完整连续段落；先陈述现象或判断，再解释作用机制、"
                     "市场影响及适用边界；预测必须使用‘预计’‘可能’‘在……条件下’等审慎表达，并"
                     "明确反证条件。原始Prompt只用于确定研究重点和篇幅，不得按问答形式逐题回应。"
+                    "最终报告固定按行业定义、行业赛道与产业链、市场或行业规模测算、竞争格局、"
+                    "市场驱动因素及Future Outlook五章编排。市场规模不得机械套用单一CAGR；"
+                    "驱动及趋势必须保持事实、机制、直接变量、行业影响与验证指标的闭环。"
                     "不得输出任何EVD、FND、TRD、SCN、SRC等内部编码，也不得使用emoji、箭头、项目"
                     "符号、口语、AI自述、营销口号、Markdown标题或表格。不得把相关性写成因果。"
                     "仅输出合法JSON。"
@@ -573,6 +576,35 @@ def _formal_paragraph(*parts: Any) -> str:
     return "".join(_sentence(part) for part in parts if _plain_report_prose(part))
 
 
+def _paragraph_blocks(value: Any, *, max_chars: int = 360) -> list[str]:
+    """Split institutional prose at sentence boundaries, never mid-sentence."""
+
+    text = _plain_report_prose(value)
+    if not text:
+        return []
+    sentences = [
+        item.strip()
+        for item in re.findall(r".*?(?:[。！？.!?]|$)", text)
+        if item.strip()
+    ]
+    blocks: list[str] = []
+    current = ""
+    for sentence in sentences:
+        if current and len(current) + len(sentence) > max_chars:
+            blocks.append(current)
+            current = sentence
+        else:
+            current += sentence
+    if current:
+        blocks.append(current)
+    return blocks
+
+
+def _append_paragraphs(lines: list[str], value: Any) -> None:
+    for block in _paragraph_blocks(value):
+        lines.extend([block, ""])
+
+
 def _validate_narrative_payload(
     payload: Any,
     *,
@@ -712,27 +744,24 @@ def generate_general_report(
         "",
         scope_paragraph,
         "",
-        "## 1. 执行摘要",
+        "## 执行摘要",
         "",
     ]
     executive_summary = _plain_report_prose(
         narrative.get("executive_summary") if narrative else ""
     )
-    if executive_summary:
-        lines.append(executive_summary)
-    else:
-        lines.append(
-            _formal_paragraph(
-                *[
-                    module.executive_summary
-                    for module in analysis.modules
-                    if any(
-                        item.review_status == AnalysisReviewStatus.ACCEPTED
-                        for item in module.findings
-                    )
-                ]
-            )
+    if not executive_summary:
+        executive_summary = _formal_paragraph(
+            *[
+                module.executive_summary
+                for module in analysis.modules
+                if any(
+                    item.review_status == AnalysisReviewStatus.ACCEPTED
+                    for item in module.findings
+                )
+            ]
         )
+    _append_paragraphs(lines, executive_summary)
 
     market = brief.market_definition
     market_paragraph = _formal_paragraph(
@@ -745,75 +774,101 @@ def generate_general_report(
         f"纳入范围包括{'、'.join(market.inclusions)}" if market.inclusions else "",
         f"排除范围包括{'、'.join(market.exclusions)}" if market.exclusions else "",
     )
-    lines.extend(["", "## 2. 研究范围与市场定义", "", market_paragraph])
+    module_map = {module.module_id: module for module in analysis.modules}
 
-    section_number = 3
-    for module in analysis.modules:
-        module_findings = [
-            item for item in module.findings
-            if item.review_status == AnalysisReviewStatus.ACCEPTED
-        ]
-        if not module_findings:
-            continue
-        lines.extend(
-            [
-                "",
-                f"## {section_number}. {module.title}",
-                "",
-                module_paragraphs.get(module.module_id)
-                or _plain_report_prose(module.executive_summary),
-                "",
+    def render_modules(module_ids: tuple[str, ...], section_number: int) -> None:
+        subsection = 1
+        for module_id in module_ids:
+            module = module_map.get(module_id)
+            if module is None:
+                continue
+            module_findings = [
+                item for item in module.findings
+                if item.review_status == AnalysisReviewStatus.ACCEPTED
             ]
-        )
-        for item_index, item in enumerate(module_findings, start=1):
-            fallback = _formal_paragraph(
-                item.statement,
-                item.mechanism,
-                f"该判断置信度为{item.confidence:.0%}，其主要不确定性为{item.uncertainty}",
-                f"该判断在{item.boundary_condition}的情形下需要重新评估",
-            )
-            paragraph = finding_paragraphs.get(item.finding_id) or fallback
-            citations = source_markers([*item.evidence_ids, *item.counter_evidence_ids])
-            lines.extend(
-                [
-                    f"### {section_number}.{item_index} {item.subject}",
-                    "",
-                    paragraph + citations,
-                    "",
-                ]
-            )
-        if module.evidence_gaps:
-            lines.append(
-                _formal_paragraph(
-                    "本章节仍存在证据限制",
-                    "；".join(module.evidence_gaps),
+            if not module_findings:
+                continue
+            intro = module_paragraphs.get(module.module_id) or module.executive_summary
+            _append_paragraphs(lines, intro)
+            for item in module_findings:
+                fallback = _formal_paragraph(
+                    item.statement,
+                    item.mechanism,
+                    f"该判断置信度为{item.confidence:.0%}，其主要不确定性为{item.uncertainty}",
+                    f"该判断在{item.boundary_condition}的情形下需要重新评估",
                 )
-            )
-        section_number += 1
+                paragraph = finding_paragraphs.get(item.finding_id) or fallback
+                citations = source_markers([*item.evidence_ids, *item.counter_evidence_ids])
+                lines.extend([f"### {section_number}.{subsection} {item.subject}", ""])
+                _append_paragraphs(lines, paragraph + citations)
+                subsection += 1
+            if module.evidence_gaps:
+                _append_paragraphs(
+                    lines,
+                    _formal_paragraph(
+                        "本章节仍存在证据限制",
+                        "；".join(module.evidence_gaps),
+                    ),
+                )
 
-    lines.extend(["", f"## {section_number}. 未来发展趋势与情景", ""])
-    for trend_index, trend in enumerate(accepted_trends, start=1):
+    lines.extend(["", "## 1. 行业定义", ""])
+    _append_paragraphs(lines, market_paragraph)
+
+    lines.extend(["", "## 2. 行业赛道与产业链", ""])
+    render_modules(("market_value_chain", "commercial_logic"), 2)
+
+    lines.extend(["", "## 3. 市场及行业规模测算", ""])
+    render_modules(("market_status",), 3)
+
+    lines.extend(["", "## 4. 竞争格局", ""])
+    render_modules(("competitive_landscape",), 4)
+
+    lines.extend(["", "## 5. 市场驱动因素及 Future Outlook", ""])
+    render_modules(("drivers_constraints",), 5)
+
+    method = future.forecast_methodology
+    method_labels = {
+        "causal_scenario": "因果情景",
+        "naive_baseline": "朴素基准",
+        "exponential_smoothing": "指数平滑",
+        "trend_regression": "趋势回归",
+        "regularized_driver_regression": "正则化驱动变量回归",
+    }
+    method_paragraph = _formal_paragraph(
+        (
+            f"本轮趋势预测采用{method_labels[method.selected_method.value]}方法，"
+            f"结构化同口径历史观测共{method.structured_observation_count}期"
+        ),
+        method.selection_rationale,
+        method.validation_design,
+        method.prediction_interval,
+        "；".join(method.model_limitations),
+    )
+    lines.extend(["### 5.1 预测方法与适用边界", ""])
+    _append_paragraphs(lines, method_paragraph)
+
+    trend_subsection = 2
+    for trend in accepted_trends:
         fallback = _formal_paragraph(
             trend.forecast_statement,
-            f"该预测适用于{trend.forecast_horizon}，主要作用机制包括{'、'.join(trend.causal_mechanism)}",
+            f"该趋势的核心变化为{trend.core_trend or trend.title}，目标行业指标为{trend.target_industry_metric or '行业发展结果'}",
+            f"该预测适用于{trend.forecast_horizon}，主要作用机制包括{'、'.join(trend.causal_mechanism)}，并直接影响{'、'.join(trend.direct_variables)}",
+            f"正向作用为{trend.positive_effect}，反向作用为{trend.negative_effect}，供需动态反馈为{trend.dynamic_supply_demand_feedback}",
+            f"相对基准情景的净影响为{trend.net_impact_summary}，市场规模影响评分为{trend.market_size_net_impact_score}，行业平均盈利能力影响评分为{trend.profitability_net_impact_score}",
             f"其对竞争格局的潜在影响为{trend.competition_impact}",
             f"其对商业模式的潜在影响为{trend.business_model_impact}",
             f"其对客户需求的潜在影响为{trend.customer_demand_impact}",
-            f"系统置信度为{trend.confidence.overall}分",
+            f"短期、中期及长期方向分别为{trend.short_term_direction}、{trend.medium_term_direction}及{trend.long_term_direction}，方法置信度为{trend.method_confidence_score}分",
+            f"持续验证指标包括{'、'.join(trend.verification_metrics)}",
             f"若出现{'、'.join(trend.falsification_conditions)}，则应重新评估该预测",
         )
         paragraph = trend_paragraphs.get(trend.trend_id) or fallback
         citations = source_markers(trend.evidence_ids)
-        lines.extend(
-            [
-                f"### {section_number}.{trend_index} {trend.title}",
-                "",
-                paragraph + citations,
-                "",
-            ]
-        )
+        lines.extend([f"### 5.{trend_subsection} {trend.title}", ""])
+        _append_paragraphs(lines, paragraph + citations)
+        trend_subsection += 1
 
-    lines.extend([f"### {section_number}.{len(accepted_trends) + 1} 情景分析", ""])
+    lines.extend([f"### 5.{trend_subsection} 情景分析", ""])
     for scenario in accepted_scenarios:
         fallback = _formal_paragraph(
             scenario.narrative,
@@ -822,15 +877,11 @@ def generate_general_report(
             f"若相关条件成立，预期结果包括{'、'.join(scenario.expected_outcomes)}",
             f"若出现{'、'.join(scenario.falsification_conditions)}，则该情景需要调整或失效",
         )
-        lines.extend(
-            [
-                f"#### {scenario.title}",
-                "",
-                scenario_paragraphs.get(scenario.scenario_id) or fallback,
-                "",
-            ]
+        lines.extend([f"#### {scenario.title}", ""])
+        _append_paragraphs(
+            lines,
+            scenario_paragraphs.get(scenario.scenario_id) or fallback,
         )
-    section_number += 1
 
     limitations = [
         *analysis.cross_module_conflicts,
@@ -848,21 +899,19 @@ def generate_general_report(
     lines.extend(
         [
             "",
-            f"## {section_number}. 证据边界、反证条件及研究限制",
+            "## 附录A：证据边界、反证条件及研究限制",
             "",
-            limitations_paragraph,
         ]
     )
-    section_number += 1
+    _append_paragraphs(lines, limitations_paragraph)
 
-    lines.extend(["", f"## {section_number}. 资料来源", ""])
+    lines.extend(["", "## 附录B：资料来源", ""])
     for number, source in enumerate(ordered_sources, start=1):
         lines.append(f"[{number}] [{source.title}]({source.url})。")
-    section_number += 1
     lines.extend(
         [
             "",
-            f"## {section_number}. 研究说明",
+            "## 附录C：研究说明",
             "",
             (
                 "本报告已经完成市场口径确认、证据真实性与研究可用性确认，以及拟纳入报告的行业判断、"

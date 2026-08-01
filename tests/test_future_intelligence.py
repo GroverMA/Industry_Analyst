@@ -218,6 +218,23 @@ def payload(evidence_id: str, finding_id: str) -> dict:
         "finding_ids": [finding_id],
         "counter_evidence_ids": [],
         "confidence_note": "当前仅有一个独立来源",
+        "core_trend": "监管准入要求持续提高",
+        "target_industry_metric": "市场进入与行业平均盈利能力",
+        "factor_class": "structural",
+        "temporal_role": "future_opportunity",
+        "direct_variables": ["合规成本", "准入周期"],
+        "verification_metrics": ["正式准入要求数量", "平均准入周期"],
+        "positive_effect": "规范化有助于提升客户信任与合格产品采用",
+        "negative_effect": "合规投入增加并可能压缩参与者利润",
+        "dynamic_supply_demand_feedback": "壁垒提高可能减少供给，但高回报也可能吸引合规能力较强者进入",
+        "net_impact_summary": "市场规模影响偏中性，盈利影响取决于成本传导能力",
+        "market_size_net_impact_score": 1,
+        "profitability_net_impact_score": -1,
+        "short_term_direction": "negative",
+        "medium_term_direction": "mixed",
+        "long_term_direction": "mixed",
+        "method_confidence_score": 3,
+        "sensitive_assumptions": ["监管方向保持连续", "合规成本能够部分传导"],
     }
     scenarios = []
     for scenario_type, scenario_id in (
@@ -527,7 +544,23 @@ def test_general_report_is_composed_only_after_both_gates() -> None:
     assert evidence.evidence_id not in report.markdown
     assert finding.finding_id not in report.markdown
     assert "对原始研究问题的回应" not in report.markdown
-    assert "研究范围与市场定义" in report.markdown
+    assert "## 1. 行业定义" in report.markdown
+    assert "## 2. 行业赛道与产业链" in report.markdown
+    assert "## 3. 市场及行业规模测算" in report.markdown
+    assert "## 4. 竞争格局" in report.markdown
+    assert "## 5. 市场驱动因素及 Future Outlook" in report.markdown
+    ordered_headings = [
+        "## 1. 行业定义",
+        "## 2. 行业赛道与产业链",
+        "## 3. 市场及行业规模测算",
+        "## 4. 竞争格局",
+        "## 5. 市场驱动因素及 Future Outlook",
+    ]
+    assert [report.markdown.index(item) for item in ordered_headings] == sorted(
+        report.markdown.index(item) for item in ordered_headings
+    )
+    assert "预测方法与适用边界" in report.markdown
+    assert "因果情景" in report.markdown
     assert report.source_count == 1
     assert "➡" not in report.markdown
     assert "👉" not in report.markdown
