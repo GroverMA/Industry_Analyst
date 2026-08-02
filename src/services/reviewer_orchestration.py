@@ -348,7 +348,7 @@ class ReviewerOrchestrationService:
             if self.company is None or self.action is None:
                 raise ReviewerPipelineError(
                     "configuration",
-                    "企业Reviewer流程尚未配置Company Scorecard或Action Plan服务",
+                    "企业审阅式研究流程尚未配置Company Scorecard或Action Plan服务",
                     project,
                 )
 
@@ -398,7 +398,7 @@ def _pipeline_analysis(artifact: IndustryAnalysisArtifact) -> IndustryAnalysisAr
                 finding.model_copy(
                     update={
                         "review_status": AnalysisReviewStatus.ACCEPTED,
-                        "reviewer_note": "系统草稿判断，仍待Reviewer追溯检查。",
+                        "reviewer_note": "系统草稿判断，仍待人工追溯检查。",
                     }
                 )
             )
@@ -423,7 +423,7 @@ def _pipeline_future(artifact: FutureIntelligenceArtifact) -> FutureIntelligence
         item.model_copy(
             update={
                 "review_status": ForecastReviewStatus.ACCEPTED,
-                "reviewer_note": "系统草稿趋势，仍待Reviewer追溯检查。",
+                "reviewer_note": "系统草稿趋势，仍待人工追溯检查。",
             }
         )
         for item in artifact.trends
@@ -432,7 +432,7 @@ def _pipeline_future(artifact: FutureIntelligenceArtifact) -> FutureIntelligence
         item.model_copy(
             update={
                 "review_status": ForecastReviewStatus.ACCEPTED,
-                "reviewer_note": "系统草稿情景，仍待Reviewer追溯检查。",
+                "reviewer_note": "系统草稿情景，仍待人工追溯检查。",
             }
         )
         for item in artifact.scenarios
@@ -459,7 +459,7 @@ def _pipeline_scorecard(artifact: CompanyScorecardArtifact) -> CompanyScorecardA
                         if accepted
                         else StrategyReviewStatus.REJECTED
                     ),
-                    "reviewer_note": "系统草稿评分，仍待Reviewer追溯检查。",
+                    "reviewer_note": "系统草稿评分，仍待人工追溯检查。",
                 }
             )
         )
@@ -479,13 +479,13 @@ def _pipeline_action_plan(artifact: ActionPlanArtifact) -> ActionPlanArtifact:
         item.model_copy(
             update={
                 "review_status": StrategyReviewStatus.ACCEPTED,
-                "reviewer_note": "系统草稿行动，仍待Reviewer追溯检查。",
+                "reviewer_note": "系统草稿行动，仍待人工追溯检查。",
             }
         )
         for item in artifact.actions
     ]
     if not actions:
-        raise ValueError("未生成可供Reviewer检查的Action Plan")
+        raise ValueError("未生成可供审阅式研究检查的Action Plan")
     return artifact.model_copy(
         update={
             "actions": actions,
@@ -540,6 +540,6 @@ def _report_requires_regeneration(markdown: str) -> bool:
         "基于已接受证据",
         "根据券商",
         "根据研报",
-        "Reviewer审阅环节",
+        "内容审阅环节",
     )
     return any(item in markdown for item in forbidden)

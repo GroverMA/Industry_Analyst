@@ -1,2 +1,1 @@
-"""Industry Analyst OS application package."""
-
+"""Trident application package."""

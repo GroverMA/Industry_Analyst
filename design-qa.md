@@ -1,44 +1,39 @@
-# Report Preview Design QA
+# Trident Research Paths and Report Export Design QA
 
-- Source visual truth: `/var/folders/dp/dwbdn3jx1j36lscl0cpz0g5w0000gn/T/codex-clipboard-1dcefe72-09c2-4b17-a43a-ca1aadc4fff9.png`
-- Additional source visuals: the four other report screenshots supplied in the same request, covering spacing, line-break, link, and market-sizing defects.
-- Browser-rendered implementation: `/private/tmp/report-preview-implementation.png`
-- Implementation URL: `http://127.0.0.1:8505/`
-- Viewport: 1280 × 720 CSS px, device scale factor 1.
-- Source pixels: 828 × 1580. Implementation pixels: 1280 × 720.
-- Density normalization: none. The source is a cropped defect example rather than a pixel-accurate target, so the comparison is requirements-based and focused on hierarchy, readability, spacing, wrapping, and controls.
-- State: full formal report preview with typography settings expanded.
+- Source visual truth: `/var/folders/dp/dwbdn3jx1j36lscl0cpz0g5w0000gn/T/codex-clipboard-6b4e4d95-da40-4720-b8c9-6167008c1626.png`
+- Browser-rendered implementation: `/private/tmp/trident-research-paths.png`
+- Implementation URL: `http://127.0.0.1:8502/`
+- Viewport: 1600 x 1000 CSS px.
+- State: first-entry research-path selection, followed by the build-first project home.
 
 ## Full-view comparison evidence
 
-The source shows oversized same-level headings, a numbering jump from 5.6 to 2.1, narrow text columns, and weak paragraph rhythm. The implementation shows a single report card with a stable 1 / 1.1 hierarchy, restrained title sizes, readable body text, fixed heading spacing, and a dedicated settings panel for font, heading and body colors, four size controls, and line height.
+The source showed two identity cards with role and permission language. The implementation keeps the balanced two-card composition while reframing the choice as two research paths. Both cards have equal size, border, typography, content density, and button weight. The page now uses the required `CHOOSE YOUR RESEARCH PATH` eyebrow, title, subtitle, path descriptions, five-step summaries, and persistence statement.
 
-## Focused region comparison evidence
+The project home was checked after entering build-first research. The hero displays the `Trident` brand, the slogan `Dive Deep into Industries. Surface with Direction.`, and the English descriptor `ENTERPRISE INDUSTRY RESEARCH & STRATEGIC DECISION INTELLIGENCE`. The sidebar exposes a persistent research-path switch without presenting the paths as user roles.
 
-The top report region was checked because it contains the highest-risk typography and hierarchy surfaces. The implementation visibly separates the report title, chapter heading, subsection heading, and body copy. The DOM was also checked through the market-sizing section: headings remained sequential, the calculation table retained six labeled columns, and the visible source marker resolved to an external URL. A separate focused image was unnecessary because these elements are readable in the implementation capture and were also verified in the semantic DOM.
+## Report display and export evidence
 
-## Findings
-
-- No P0/P1/P2 issue remains in the tested report-preview state.
-- Typography: professional Chinese font fallbacks are present; default body size is 18 px with 1.85 line height; title levels use distinct sizes and fixed margins.
-- Spacing and layout: the report is capped at 980 px, padded responsively, and headings use consistent vertical rhythm.
-- Colors and tokens: title and body colors are independently adjustable; defaults preserve the existing navy/blue-grey design language and accessible contrast.
-- Image quality: this screen contains no report imagery or decorative assets, so no raster or icon fidelity issue applies.
-- Copy and content: the report follows the six-part research order, contains no internal evidence codes, and exposes an auditable market-sizing calculation table.
+- The report display panel controls font family, title and body colors, report title, level-one and level-two heading sizes, body size, and line height.
+- The same immutable style object is passed to the web preview, Word builder, and PDF builder for build-first and review-first flows, including general and enterprise reports.
+- A deliberately customized report was exported to Word and PDF. The PDF was rendered to page images and visually checked for title hierarchy, color, body size, and line spacing.
+- Word content, paragraph hierarchy, font sizes, colors, and line spacing were inspected programmatically after export. The text and styling are present in the generated DOCX package.
+- A deliberately malformed sample containing sentence-closing punctuation at the beginning of paragraphs, headings, bullets, quotes, and table cells was exported. Shared normalization removed those leading marks before web rendering and both document exports.
 
 ## Interaction and runtime checks
 
-- Opened and closed the report settings panel.
-- Confirmed the font selector, two color pickers, four size sliders, and line-height slider are present.
-- Confirmed the complete-report expander renders the report and market-sizing table.
-- Confirmed the visible source marker has an external URL.
-- Checked browser console warnings and errors: none.
+- Entered the build-first path through `从问题开始` and confirmed the existing project home rendered without a Streamlit error component.
+- Confirmed the sidebar presents `当前研究方式 · 构建式研究` and retains the in-project switch entry.
+- Confirmed project data is not recreated by a path switch; both views operate on the same project object, evidence collection, report artifact, and revision state.
+- Confirmed the report settings panel is used by every Word/PDF download call site in both research paths.
+- Automated application, workflow, report-generation, Word-export, and PDF-export tests passed.
 
-## Comparison history
+## Findings
 
-- Earlier issue: all subsection headings appeared equally large and numbering could restart unexpectedly. Fix: formal-report hierarchy normalization plus distinct H1/H2/H3/H4 tokens.
-- Earlier issue: dense or broken Chinese paragraphs. Fix: Chinese typography normalization, logical paragraph chunking, and controlled line height/width.
-- Earlier issue: some source symbols looked like links but lacked a destination. Fix: report source markers now render as explicit numeric Markdown links; decorative heading permalink icons are hidden in the report card.
-- Post-fix evidence: `/private/tmp/report-preview-implementation.png`; semantic DOM confirmed sequential headings and a linked source marker.
+- No P0, P1, or P2 issue remains in the tested path-selection, project-home, web-preview, Word-export, or PDF-export states.
+- The prohibited identity wording is absent from user-facing application code.
+- The two research paths retain equal visual priority and make their opposite research order explicit.
+- Typography controls now affect downloadable deliverables instead of changing only the browser preview.
+- Paragraph-start punctuation is normalized at the final rendering boundary, protecting all three formats from upstream model variation.
 
 final result: passed

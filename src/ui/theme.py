@@ -124,6 +124,10 @@ def apply_theme() -> None:
         .stProgress > div > div > div > div {{ background: var(--ia-accent); }}
         .ia-brand {{ padding: .35rem 0 1.25rem; }}
         .ia-brand-name {{ font-size: 1.05rem; font-weight: 720; color: var(--ia-text); }}
+        .ia-brand-slogan {{
+            color: var(--ia-accent); font-size: .67rem; font-weight: 680;
+            line-height: 1.42; margin-top: .18rem;
+        }}
         .ia-brand-sub {{ font-size: .72rem; color: var(--ia-muted); margin-top: .16rem; }}
         .ia-hero {{
             background: var(--ia-surface);
@@ -148,6 +152,39 @@ def apply_theme() -> None:
         }}
         .ia-role-hero p {{
             max-width: 680px; margin: 0 auto; line-height: 1.75;
+        }}
+        .ia-trident-lockup {{
+            display:flex; align-items:center; gap:1.2rem; flex-wrap:wrap;
+        }}
+        .ia-trident-slogan {{
+            border-left:2px solid #CFE0E3; padding-left:1.1rem;
+            color:var(--ia-accent); font-size:.85rem; font-weight:680; line-height:1.45;
+            letter-spacing:.01em;
+        }}
+        .st-key-research_path_build, .st-key-research_path_review {{ height:100%; }}
+        .st-key-research_path_build > div, .st-key-research_path_review > div {{ height:100%; }}
+        .ia-path-en {{
+            color:var(--ia-accent); font-size:.68rem; font-weight:780;
+            letter-spacing:.1em; margin-bottom:.5rem;
+        }}
+        .ia-path-title {{ margin:.1rem 0 .55rem !important; font-size:1.45rem !important; }}
+        .ia-path-tag {{
+            min-height:2.6rem; color:var(--ia-text); font-size:.83rem;
+            font-weight:680; line-height:1.55; margin-bottom:.8rem;
+        }}
+        .ia-path-copy {{ min-height:4.9rem; font-size:.86rem; line-height:1.7; margin-bottom:.9rem; }}
+        .ia-path-note {{
+            min-height:4rem; color:var(--ia-muted); font-size:.8rem; line-height:1.65;
+            border-top:1px solid var(--ia-border); padding-top:.8rem;
+        }}
+        .ia-path-flow {{
+            color:var(--ia-accent); background:var(--ia-accent-soft); border-radius:10px;
+            padding:.72rem .8rem; font-size:.76rem; font-weight:650; line-height:1.55;
+            margin:.75rem 0 1rem;
+        }}
+        .ia-path-footnote {{
+            max-width:960px; margin:1.15rem auto 0; text-align:center;
+            font-size:.78rem; line-height:1.65;
         }}
         .ia-reviewer-banner {{
             display: flex; justify-content: space-between; gap: 1rem; align-items: center;

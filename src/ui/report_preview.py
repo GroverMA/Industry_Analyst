@@ -1,10 +1,15 @@
-"""Shared, readable report preview for Consultant and Reviewer roles."""
+"""Shared report typography for both research paths and every export format."""
 
 from __future__ import annotations
 
 import re
 
 import streamlit as st
+
+from src.services.report_export import (
+    ReportStyleSettings,
+    clean_report_markdown_for_display,
+)
 
 
 FONT_OPTIONS = {
@@ -24,17 +29,16 @@ def render_report_preview(
     key: str,
     expanded: bool = True,
     label: str = "预览完整报告",
-) -> None:
+) -> ReportStyleSettings:
     """Render a responsive report with user-adjustable typography.
 
-    Controls only affect the browser preview. Word and PDF retain the governed
-    export template so different reviewers cannot accidentally alter the
-    official delivery style.
+    The returned settings are passed to Word and PDF export so all three
+    representations share the same hierarchy, colors, font choice and rhythm.
     """
 
     safe_key = _safe_key(key)
     with st.expander("报告显示设置", expanded=False):
-        st.caption("以下设置只改变网页预览，不修改报告内容、Word或PDF文件。")
+        st.caption("以下设置将同步用于网页预览、Word和PDF文件，不修改报告内容。")
         font_col, heading_col, body_col = st.columns(3)
         font_label = font_col.selectbox(
             "字体",
@@ -53,10 +57,10 @@ def render_report_preview(
             key=f"{safe_key}_body_color",
         )
         size_cols = st.columns(5)
-        h1_size = size_cols[0].slider("报告标题", 30, 52, 40, key=f"{safe_key}_h1")
-        h2_size = size_cols[1].slider("一级标题", 24, 40, 31, key=f"{safe_key}_h2")
-        h3_size = size_cols[2].slider("二级标题", 18, 32, 24, key=f"{safe_key}_h3")
-        body_size = size_cols[3].slider("正文", 14, 23, 18, key=f"{safe_key}_body")
+        h1_size = size_cols[0].slider("报告标题", 28, 48, 34, key=f"{safe_key}_h1")
+        h2_size = size_cols[1].slider("一级标题", 22, 36, 26, key=f"{safe_key}_h2")
+        h3_size = size_cols[2].slider("二级标题", 17, 28, 20, key=f"{safe_key}_h3")
+        body_size = size_cols[3].slider("正文", 14, 21, 16, key=f"{safe_key}_body")
         line_height = size_cols[4].slider(
             "行距",
             1.4,
@@ -65,6 +69,17 @@ def render_report_preview(
             step=0.05,
             key=f"{safe_key}_line",
         )
+
+    settings = ReportStyleSettings(
+        font_label=font_label,
+        heading_color=heading_color,
+        body_color=body_color,
+        report_title_size=h1_size,
+        level_one_size=h2_size,
+        level_two_size=h3_size,
+        body_size=body_size,
+        line_height=line_height,
+    )
 
     preview_key = f"report_preview_{safe_key}"
     css_class = f"st-key-{preview_key}"
@@ -116,6 +131,7 @@ def render_report_preview(
             line-height: {line_height} !important;
             letter-spacing: .005em;
             word-break: normal;
+            line-break: strict;
             overflow-wrap: anywhere;
         }}
         .{css_class} p {{
@@ -146,5 +162,5 @@ def render_report_preview(
     )
     with st.expander(label, expanded=expanded):
         with st.container(key=preview_key):
-            st.markdown(markdown)
-
+            st.markdown(clean_report_markdown_for_display(markdown))
+    return settings

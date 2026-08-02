@@ -1370,7 +1370,7 @@ def _render_report(project: ProjectState) -> None:
             "以下研究重点仍存在部分覆盖或证据缺口："
             + "；".join(report.unresolved_prompt_questions)
         )
-    render_report_preview(
+    report_style = render_report_preview(
         report.markdown,
         key=f"consultant_{project.project_id}",
         expanded=True,
@@ -1382,6 +1382,7 @@ def _render_report(project: ProjectState) -> None:
         markdown=report.markdown,
         report_status="经人工审核的通用行业研究报告",
         generated_at=report.generated_at,
+        style=report_style,
     )
     col_a, col_b = st.columns(2)
     try:
@@ -1445,7 +1446,7 @@ def _run_reviewer_report_pipeline(project: ProjectState) -> None:
         "action_plan": "正在根据企业战略意图形成 Action Plan…",
         "enterprise_report": "正在组织企业决策报告…",
     }
-    progress = st.progress(0, text="正在准备Reviewer报告优先流程…")
+    progress = st.progress(0, text="正在准备审阅式研究的报告优先流程…")
 
     def update_progress(stage: str, completed: int, total: int) -> None:
         progress.progress(
@@ -1505,18 +1506,24 @@ def _rerun_reviewer_analysis(project: ProjectState) -> None:
     _run_reviewer_report_pipeline(refreshed)
 
 
-def _render_reviewer_report_downloads(project: ProjectState, markdown: str, title: str) -> None:
+def _render_reviewer_report_downloads(
+    project: ProjectState,
+    markdown: str,
+    title: str,
+    report_style,
+) -> None:
     safe_name = "-".join(project.project_name.split()) or "industry-report"
     export_context = project_report_context(
         project,
         title=title,
         markdown=markdown,
-        report_status="报告优先审阅稿 · 待Reviewer完成追溯检查",
+        report_status="审阅式研究初稿 · 待完成追溯检查",
         generated_at=(
             project.enterprise_decision_report_artifact.generated_at
             if project.company_strategy_enabled and project.enterprise_decision_report_artifact
             else project.general_report_artifact.generated_at
         ),
+        style=report_style,
     )
     word_col, pdf_col = st.columns(2)
     try:
@@ -1759,7 +1766,7 @@ def _render_content_revision(project: ProjectState, report) -> None:
                 project,
                 edited,
                 source="direct_edit",
-                reviewer_note="Reviewer直接编辑",
+                reviewer_note="审阅式研究直接编辑",
             )
         except ReviewerRevisionError as exc:
             st.error(str(exc))
@@ -1840,7 +1847,7 @@ def _render_content_revision(project: ProjectState, report) -> None:
                     for item in turn.recommendations:
                         st.write(f"- {item}")
                 if turn.questions_for_reviewer:
-                    st.markdown("**需要Reviewer判断**")
+                    st.markdown("**需要人工判断**")
                     for item in turn.questions_for_reviewer:
                         st.write(f"- {item}")
                 if turn.trace_amendments:
@@ -1900,13 +1907,18 @@ def _render_reviewer_workpapers(project: ProjectState) -> None:
     tabs = st.tabs(labels)
     with tabs[0]:
         st.info("这是报告优先生成的审阅稿。其余页签用于追溯引用、分析方法和决策逻辑。")
-        render_report_preview(
+        report_style = render_report_preview(
             report.markdown,
             key=f"reviewer_{project.project_id}",
             expanded=True,
             label="预览完整审阅稿",
         )
-        _render_reviewer_report_downloads(project, report.markdown, report.title)
+        _render_reviewer_report_downloads(
+            project,
+            report.markdown,
+            report.title,
+            report_style,
+        )
         if st.button(
             "按最新SOP重新生成分析与报告",
             width="stretch",
@@ -1930,7 +1942,7 @@ def _render_reviewer_workpapers(project: ProjectState) -> None:
 
 def _render_reviewer_workspace(project: ProjectState) -> None:
     st.markdown(
-        '<div class="ia-reviewer-banner"><strong>报告审阅者模式</strong>'
+        '<div class="ia-reviewer-banner"><strong>审阅式研究 · Report Review First</strong>'
         '<span>先看完整报告，再追溯引用、分析方法与企业决策依据</span></div>',
         unsafe_allow_html=True,
     )
@@ -1960,7 +1972,7 @@ def render(project: ProjectState | None) -> None:
     role = get_user_role(st.session_state) or UserRole.CONSULTANT
     if role == UserRole.REVIEWER:
         page_header(
-            "Reviewer Workspace · Report First",
+            "Report Review First",
             "报告审阅工作台",
             "确认研究范围后先查看完整报告，再按引用、分析方法和决策逻辑追溯研究过程",
         )

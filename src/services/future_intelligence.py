@@ -494,7 +494,7 @@ class FutureIntelligenceService:
                     "evidence_ids": refs,
                     "finding_ids": [finding.finding_id],
                     "counter_evidence_ids": [],
-                    "confidence_note": "基于已完成的网页研究与行业分析形成，可在Reviewer工作台持续校准。",
+                    "confidence_note": "基于已完成的网页研究与行业分析形成，可在审阅式研究工作台持续校准。",
                     "core_trend": category_title.get(module_id, finding.subject),
                     "target_industry_metric": "市场规模、渗透率、价格、成本、份额及行业盈利能力",
                     "factor_class": "structural",

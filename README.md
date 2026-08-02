@@ -1,6 +1,6 @@
-# Industry Analyst OS
+# Trident
 
-Industry Analyst OS is a lightweight, evidence-first web AI agent for industry research and company strategy. It turns professional research methods into a visible workflow: define the decision, set the market boundary, plan the research, collect and verify evidence, analyze the industry, map findings to the company, review critical judgments, and produce an actionable decision report.
+Trident is a lightweight, evidence-first enterprise industry research and strategic decision intelligence agent. It turns professional research methods into two interoperable paths: build from the research question or review a complete draft first. Both paths share the same project data, evidence base, analytical logic, report versions, and export formats.
 
 ## Product principle
 

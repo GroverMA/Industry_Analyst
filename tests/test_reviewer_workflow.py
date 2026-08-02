@@ -209,7 +209,7 @@ def test_role_selection_persists_both_supported_roles() -> None:
     assert get_user_role(state) is UserRole.REVIEWER
 
 
-def test_role_selection_ui_exposes_author_and_reviewer_choices() -> None:
+def test_research_path_selection_ui_exposes_build_and_review_choices() -> None:
     def _role_app() -> None:
         from src.ui.role_selection import render_role_selection
 
@@ -219,8 +219,15 @@ def test_role_selection_ui_exposes_author_and_reviewer_choices() -> None:
 
     assert not app.exception
     labels = {button.label for button in app.button}
-    assert "以研究顾问身份进入" in labels
-    assert "以报告审阅者身份进入" in labels
+    assert "从问题开始" in labels
+    assert "生成报告初稿" in labels
+    page_copy = "\n".join(item.value for item in app.markdown)
+    assert "选择你的研究方式" in page_copy
+    assert "Research Build First" in page_copy
+    assert "Report Review First" in page_copy
+    assert "工作身份" not in page_copy
+    assert "咨询分析人员" not in page_copy
+    assert "审阅人员" not in page_copy
 
 
 def test_reviewer_general_report_first_pipeline_generates_report_and_trace(monkeypatch) -> None:

@@ -13,8 +13,11 @@ def render(project: ProjectState | None) -> None:
     st.markdown(
         """
         <section class="ia-hero" style="padding:1.75rem 2rem;margin-bottom:1.15rem">
-          <div class="ia-eyebrow">Universal Industry Research Agent</div>
-          <h1 style="font-size:clamp(1.9rem,3vw,2.55rem)">Industry Analyst OS</h1>
+          <div class="ia-eyebrow">ENTERPRISE INDUSTRY RESEARCH &amp; STRATEGIC DECISION-MAKING AGENT</div>
+          <div class="ia-trident-lockup">
+            <h1 style="font-size:clamp(2.1rem,3.4vw,3.05rem)">Trident</h1>
+            <div class="ia-trident-slogan">Dive Deep into Industries.<br/>Surface with Direction.</div>
+          </div>
           <p style="margin-top:.7rem">你的专属AI行业分析师：洞察未来趋势与竞争格局，发现市场机会，找到增长路径。</p>
         </section>
         """,

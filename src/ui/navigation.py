@@ -347,12 +347,12 @@ def _render_workspace_navigation(project: ProjectState) -> str:
 def _render_role_switcher() -> None:
     role = get_user_role(st.session_state) or UserRole.CONSULTANT
     with st.popover(
-        f"当前身份 · {ROLE_LABELS[role]}",
+        f"当前研究方式 · {ROLE_LABELS[role]}",
         width="stretch",
-        help="切换身份不会清除项目或研究结果",
+        help="切换研究方式不会清除项目、引用、人工修改或报告进度",
     ):
         st.caption(ROLE_NOTES[role])
-        st.markdown("**切换工作身份**")
+        st.markdown("**切换研究方式**")
         for option in UserRole:
             if st.button(
                 f"{ROLE_LABELS[option]} · {ROLE_NOTES[option]}",
@@ -373,8 +373,9 @@ def render_sidebar(project: ProjectState | None, catalog: dict) -> str:
         st.markdown(
             """
             <div class="ia-brand">
-              <div class="ia-brand-name">Industry Analyst OS</div>
-              <div class="ia-brand-sub">Evidence-first research workspace</div>
+              <div class="ia-brand-name">Trident</div>
+              <div class="ia-brand-slogan">Dive Deep into Industries.<br/>Surface with Direction.</div>
+              <div class="ia-brand-sub">Enterprise research & strategic decision intelligence</div>
             </div>
             """,
             unsafe_allow_html=True,

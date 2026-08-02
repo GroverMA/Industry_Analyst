@@ -10,8 +10,10 @@ from pypdf import PdfReader
 
 from src.services.report_export import (
     ReportExportContext,
+    ReportStyleSettings,
     build_report_docx,
     build_report_pdf,
+    clean_report_markdown_for_display,
     project_report_context,
 )
 import src.services.report_export as report_export
@@ -98,8 +100,8 @@ def test_pdf_export_is_paginated_and_has_metadata() -> None:
 def test_pdf_export_uses_cloud_safe_cjk_fallback_without_system_font(
     monkeypatch,
 ) -> None:
-    monkeypatch.setattr(report_export, "PDF_CJK_FONT", "MissingIndustryReportFont")
-    monkeypatch.setattr(report_export, "PDF_FONT_CANDIDATES", ())
+    monkeypatch.setattr(report_export, "PDF_CJK_SANS_FONT", "MissingIndustryReportFont")
+    monkeypatch.setattr(report_export, "PDF_SANS_FONT_CANDIDATES", ())
     monkeypatch.delenv("INDUSTRY_REPORT_CJK_FONT", raising=False)
 
     payload = report_export.build_report_pdf(context())
@@ -137,3 +139,52 @@ def test_download_button_theme_forces_white_text() -> None:
 
     assert ".stDownloadButton > button" in source
     assert "color: #FFFFFF !important" in source
+
+
+def test_style_settings_are_applied_to_word_and_pdf_exports() -> None:
+    styled = ReportStyleSettings(
+        font_label="报告宋体",
+        heading_color="#243B53",
+        body_color="#52606D",
+        report_title_size=38,
+        level_one_size=28,
+        level_two_size=21,
+        body_size=17,
+        line_height=1.9,
+    )
+    customized = ReportExportContext(**{**context().__dict__, "style": styled})
+
+    word_payload = build_report_docx(customized)
+    document = Document(io.BytesIO(word_payload))
+    # OOXML stores type in half-points, so 12.75 pt is rounded to 12.5 pt.
+    assert document.styles["Normal"].font.size.pt == 12.5
+    assert str(document.styles["Normal"].font.color.rgb) == "52606D"
+    assert document.styles["Heading 1"].font.size.pt == 21
+    assert str(document.styles["Heading 1"].font.color.rgb) == "243B53"
+    assert build_report_pdf(customized).startswith(b"%PDF")
+
+
+def test_paragraphs_never_start_with_closing_punctuation_in_any_delivery() -> None:
+    dirty = """# 标题
+
+## 章节
+
+，第一段结论。
+
+。第二段结论。
+
+…第三段结论。
+
+—第四段结论。
+
+- ；列表结论
+"""
+    cleaned = clean_report_markdown_for_display(dirty)
+    visible_lines = [line.lstrip("#-* >") for line in cleaned.splitlines() if line.strip()]
+    assert all(not line.startswith(tuple("，。；：！？、…—,.!?;:）》】〉」』’”)]")) for line in visible_lines)
+
+    customized = ReportExportContext(**{**context().__dict__, "markdown": dirty})
+    document = Document(io.BytesIO(build_report_docx(customized)))
+    body_paragraphs = [paragraph.text.strip() for paragraph in document.paragraphs if paragraph.text.strip()]
+    assert all(not text.startswith(tuple("，。；：！？、…—,.!?;:）》】〉」』’”)]")) for text in body_paragraphs)
+    assert build_report_pdf(customized).startswith(b"%PDF")

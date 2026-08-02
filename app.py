@@ -1,4 +1,4 @@
-"""Industry Analyst OS Streamlit entry point."""
+"""Trident Streamlit entry point."""
 
 from __future__ import annotations
 
@@ -42,8 +42,7 @@ resume_page_for_project = browser_history.resume_page_for_project
 
 
 st.set_page_config(
-    page_title="Industry Analyst OS",
-    page_icon="📊",
+    page_title="Trident · Industry Research Intelligence",
     layout="wide",
     # Desktop keeps the project library visible; Streamlit collapses it on
     # narrow/mobile viewports so the research form remains immediately usable.
@@ -52,7 +51,7 @@ st.set_page_config(
 
 
 RUNTIME_RELEASE_KEY = "industry_analyst_runtime_release"
-RUNTIME_RELEASE_ID = "reviewer-content-revision-v2"
+RUNTIME_RELEASE_ID = "trident-research-paths-v1"
 
 # Community Cloud updates the checkout without always restarting the Python
 # process. Refresh the modules changed by this release once per browser session
@@ -153,7 +152,7 @@ PAGE_RENDERERS = pages_registry.PAGE_RENDERERS
 theme.apply_theme()
 initialize_session(st.session_state)
 
-# Existing automated UI tests exercise the historical Consultant journey.  A
+# Existing automated UI tests exercise the build-first journey.  A
 # real browser starts without a role and receives the first-entry selector.
 if os.environ.get("PYTEST_CURRENT_TEST") and get_user_role(st.session_state) is None:
     set_user_role(st.session_state, UserRole.CONSULTANT)

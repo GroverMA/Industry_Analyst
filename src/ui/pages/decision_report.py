@@ -58,7 +58,7 @@ def render(project: ProjectState | None) -> None:
         cols[0].metric("采用证据", len(general.accepted_evidence_ids))
         cols[1].metric("采用判断", len(general.accepted_finding_ids))
         cols[2].metric("独立来源", general.source_count)
-        render_report_preview(
+        report_style = render_report_preview(
             general.markdown,
             key=f"decision_general_{project.project_id}",
             expanded=True,
@@ -70,6 +70,7 @@ def render(project: ProjectState | None) -> None:
             markdown=general.markdown,
             report_status="经人工审核的通用行业研究报告",
             generated_at=general.generated_at,
+            style=report_style,
         )
         col_a, col_b = st.columns(2)
         try:
@@ -144,7 +145,7 @@ def render(project: ProjectState | None) -> None:
         return
 
     st.success("企业决策报告已生成；内部追溯关系保留在审核工作台，不进入正式交付正文。")
-    render_report_preview(
+    report_style = render_report_preview(
         enterprise_report.markdown,
         key=f"decision_enterprise_{project.project_id}",
         expanded=True,
@@ -156,6 +157,7 @@ def render(project: ProjectState | None) -> None:
         markdown=enterprise_report.markdown,
         report_status="经人工审核的企业战略决策报告",
         generated_at=enterprise_report.generated_at,
+        style=report_style,
     )
     col_c, col_d = st.columns(2)
     try:

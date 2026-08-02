@@ -325,7 +325,7 @@ class ReportGenerationService:
                 question=question,
                 coverage_status="partial",
                 note=(
-                    "当前材料已进入报告草稿；请Reviewer在Content Revision中重点核对该研究重点的"
+                    "当前材料已进入报告草稿；请审阅者在Content Revision中重点核对该研究重点的"
                     "结论强度与表述范围。"
                 ),
             )
@@ -601,7 +601,7 @@ def _normalize_chinese_typography(value: Any) -> str:
     text = re.sub(r"(?<=[\u3400-\u9fff])\s+(?=[A-Z]{2,}[0-9A-Z-]*\b)", "", text)
     text = re.sub(r"(?<=[A-Z0-9%])\s+(?=[\u3400-\u9fff])", "", text)
     text = re.sub(r"([，。；：！？、]){2,}", lambda match: match.group(0)[-1], text)
-    text = re.sub(r"^[\s、，；;:：]+", "", text)
+    text = re.sub(r"^[\s，。；：！？、,.!?;:）》】」』)\]]+", "", text)
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 

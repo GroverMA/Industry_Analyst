@@ -144,7 +144,7 @@ class IndustryAnalysisService:
             "handling_rule": (
                 "用户补充内容只能作为待验证的专家观点或分析假设，不能作为公开事实证据；"
                 "若公开资料覆盖有限，应使用最相关材料形成可审阅的分析师估计或样本判断，"
-                "并把需要Reviewer重点核对的内容留在内部evidence_gaps；不得因此输出空模块。"
+                "并把需要审阅者重点核对的内容留在内部evidence_gaps；不得因此输出空模块。"
             ),
         }
         modules = [
@@ -433,7 +433,7 @@ class IndustryAnalysisService:
             "statement": statement,
             "mechanism": (
                 f"该网页观察与{project.region}{project.industry}的{title}直接相关，可作为本轮"
-                "行业判断的基础；其外推范围将在Reviewer修改环节单独核对。"
+                "行业判断的基础；其外推范围将在内容修订环节单独核对。"
             ),
             "evidence_ids": [item["evidence_id"]],
             "counter_evidence_ids": [],
@@ -442,7 +442,7 @@ class IndustryAnalysisService:
             "impact_direction": impact_direction,
             "confidence": max(0.45, min(0.7, float(item.get("qa_score", 50)) / 100)),
             "scope": f"{project.region} · {project.industry}",
-            "uncertainty": "代表性样本与整体市场之间仍需Reviewer判断外推强度",
+            "uncertainty": "代表性样本与整体市场之间仍需审阅者判断外推强度",
             "boundary_condition": "若后续资料显示市场口径、时间或业务范围不同，应调整该判断",
         }
         return {
@@ -450,7 +450,7 @@ class IndustryAnalysisService:
             "title": title,
             "executive_summary": statement,
             "findings": [finding],
-            "evidence_gaps": [f"本模块由结构修复回退生成，需Reviewer重点核对：{last_error}"],
+            "evidence_gaps": [f"本模块由结构修复回退生成，需审阅者重点核对：{last_error}"],
             "rejected_questions": [],
         }
 
@@ -721,7 +721,7 @@ class IndustryAnalysisService:
                 if not isinstance(gaps, list):
                     gaps = []
                     module["evidence_gaps"] = gaps
-                gaps.append(f"{removed}项影响因素需要Reviewer重新确认角色与方向")
+                gaps.append(f"{removed}项影响因素需要审阅者重新确认角色与方向")
                 changed = True
         return changed
 

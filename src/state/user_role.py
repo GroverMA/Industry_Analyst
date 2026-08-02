@@ -1,4 +1,4 @@
-"""Session-scoped product role used to switch between authoring and review UX."""
+"""Session-scoped research path used to switch between build-first and review-first UX."""
 
 from __future__ import annotations
 
@@ -16,13 +16,13 @@ class UserRole(StrEnum):
 
 
 ROLE_LABELS = {
-    UserRole.CONSULTANT: "Consultant · 咨询分析人员",
-    UserRole.REVIEWER: "Reviewer · 审阅人员",
+    UserRole.CONSULTANT: "构建式研究",
+    UserRole.REVIEWER: "审阅式研究",
 }
 
 ROLE_NOTES = {
-    UserRole.CONSULTANT: "撰写报告的人",
-    UserRole.REVIEWER: "审阅报告的人",
+    UserRole.CONSULTANT: "Research Build First · 从问题开始",
+    UserRole.REVIEWER: "Report Review First · 从完整初稿开始",
 }
 
 
