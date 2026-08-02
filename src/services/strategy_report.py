@@ -156,6 +156,25 @@ def _paragraph(*parts) -> str:
     return "".join(_sentence(part) for part in parts if str(part or "").strip())
 
 
+def _split_general_report(markdown: str) -> tuple[str, str]:
+    """Keep the six industry chapters in place and move references to the end."""
+
+    body: list[str] = []
+    references: list[str] = []
+    in_references = False
+    first_title_skipped = False
+    for line in markdown.splitlines():
+        if line.startswith("## 附录：资料来源"):
+            in_references = True
+            references.append(line)
+            continue
+        if not first_title_skipped and line.startswith("# "):
+            first_title_skipped = True
+            continue
+        (references if in_references else body).append(line)
+    return "\n".join(body).strip(), "\n".join(references).strip()
+
+
 def generate_enterprise_decision_report(project: ProjectState) -> EnterpriseDecisionReportArtifact:
     """Compose the approved strategy layer as formal management-report prose."""
 
@@ -180,25 +199,28 @@ def generate_enterprise_decision_report(project: ProjectState) -> EnterpriseDeci
         if scorecard.weighted_score is not None
         else "按当前已评分维度暂不汇总"
     )
+    general_body, general_references = _split_general_report(general.markdown)
     lines = [
-        f"# {project.project_name} · 企业决策版",
-        "",
-        (
-            "本报告在经人工确认的通用行业研究基础上，结合目标企业战略意图、经确认的一手资料、"
-            "公司评分及行动计划形成。行业结论、公司判断及建议均保留追溯记录，并受所列证据边界"
-            "及停止条件约束。"
-        ),
-        "",
-        "## A. 管理层决策框架",
+        f"# {project.project_name} · 企业战略决策报告",
         "",
         _paragraph(
-            f"本报告面向{project.target_company}形成企业层面的决策支持",
-            f"企业当前战略意图为{project.company_strategy_objective}",
+            f"本报告面向{project.target_company}的战略意图形成行业研究与企业决策支持",
+            "报告先呈现行业定义、赛道与产业链、市场规模、竞争格局、驱动因素及未来展望，"
+            "再结合企业能力形成评分、行动优先级和执行路径",
+        ),
+        "",
+        general_body,
+        "",
+        "## 7. 企业战略意图与决策框架",
+        "",
+        _paragraph(
+            f"目标企业为{project.target_company}",
+            f"企业战略意图为{project.company_strategy_objective}",
             f"公司综合得分为{weighted_score}，已评分权重覆盖率为{scorecard.scored_weight:.0%}",
             scorecard.overall_assessment,
         ),
         "",
-        "## B. 公司能力评分",
+        "## 8. 公司能力评分",
         "",
         "| 评估维度 | 得分 | 权重 | 置信度 | 数据完整度 | 对标对象 |",
         "|---|---:|---:|---:|---:|---|",
@@ -214,26 +236,26 @@ def generate_enterprise_decision_report(project: ProjectState) -> EnterpriseDeci
     lines.extend(
         [
             "",
-            "### B.1 战略优势",
+            "### 8.1 战略优势",
             "",
             _paragraph(*(scorecard.strategic_advantages or ["当前评分显示企业优势仍处于培育阶段"])),
             "",
-            "### B.2 关键差距",
+            "### 8.2 关键差距",
             "",
             _paragraph(*(scorecard.critical_gaps or ["当前评分未识别需要单独列示的关键能力差距"])),
             "",
-            "### B.3 跨维度风险",
+            "### 8.3 跨维度风险",
             "",
             _paragraph(*(scorecard.cross_dimension_risks or ["当前评分未识别额外的跨维度风险"])),
             "",
-            "## C. 经审核的战略行动计划",
+            "## 9. 战略行动计划",
             "",
         ]
     )
     for index, action in enumerate(accepted_actions, start=1):
         lines.extend(
             [
-                f"### C.{index} {action.title}",
+                f"### 9.{index} {action.title}",
                 "",
                 _paragraph(
                     f"该项行动优先级为{action.priority.value}，并以{action.strategic_objective}为战略锚点",
@@ -259,21 +281,21 @@ def generate_enterprise_decision_report(project: ProjectState) -> EnterpriseDeci
     lines.extend(
         [
             "",
-            "## D. 推进顺序及组合风险",
+            "## 10. 推进顺序及组合风险",
             "",
-            "### D.1 推进顺序",
+            "### 10.1 推进顺序",
             "",
             _paragraph(*action_plan.sequencing_logic),
             "",
-            "### D.2 未采纳选项",
+            "### 10.2 未采纳选项",
             "",
             _paragraph(*(action_plan.rejected_options or ["本轮审核未记录其他未采纳选项"])),
             "",
-            "### D.3 组合风险",
+            "### 10.3 组合风险",
             "",
             _paragraph(*(action_plan.portfolio_risks or ["本轮审核未记录额外组合风险"])),
             "",
-            "## E. 人工审核及责任边界",
+            "## 11. 人工审核及责任边界",
             "",
             _paragraph(
                 f"公司评分确认时间为{scorecard.confirmed_at or '未记录'}",
@@ -284,9 +306,7 @@ def generate_enterprise_decision_report(project: ProjectState) -> EnterpriseDeci
                 ),
             ),
             "",
-            "# 附录：通用行业研究报告",
-            "",
-            general.markdown,
+            general_references,
         ]
     )
     markdown = sanitize_formal_report("\n".join(lines))

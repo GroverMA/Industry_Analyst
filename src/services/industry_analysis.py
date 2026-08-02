@@ -271,7 +271,11 @@ class IndustryAnalysisService:
                 "先统一对象、地区、年份、价值或实物量、价格、税费、业务以及新增/替换/服务口径。"
                 "按行业经济逻辑选择Top-down、Bottom-up、枚举、新增配套加后市场或分应用加总作为"
                 "主方法，并至少提出一种独立验证方法；说明公式、数据输入、假设、覆盖率、重叠、"
-                "历史及预测结果与CAGR。不得机械套用单一CAGR；无法测算时明确缺失变量和合理区间。"
+                "历史及预测结果与CAGR。每项市场规模判断的comparison_dimensions必须尽量写入"
+                "quantity或base_market、weighted_average_price或share、formula、result、"
+                "double_counting_rule及validation_method，使系统可以展示‘数量×价格’或‘上级市场"
+                "×占比’的完整计算链。不得机械套用单一CAGR；输入不足时仍需使用合理代理形成中心"
+                "估计与区间，并在内部底稿记录敏感变量，不得在正式报告写成无法测算。"
             ),
             "competitive_landscape": (
                 "先建立候选公司池与已知遗漏，再映射目标业务；坚持同年、同地区、同细分业务、"

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import pytest
 from streamlit.testing.v1 import AppTest
 
@@ -580,13 +582,26 @@ def test_general_report_is_composed_only_after_both_gates() -> None:
     assert "行业赛道与产业链" in report.markdown
     assert "市场规模、结构与发展现状" in report.markdown
     assert "竞争格局与主要市场参与者" in report.markdown
-    assert "市场驱动因素与未来展望" in report.markdown
-    assert report.markdown.index("市场驱动因素与未来展望") < report.markdown.index(
-        "行业定义与研究边界"
+    assert "市场驱动因素与关键条件" in report.markdown
+    assert "未来发展趋势与Future Outlook" in report.markdown
+    ordered_sections = [
+        "行业定义与研究边界",
+        "行业赛道与产业链",
+        "市场规模、结构与发展现状",
+        "竞争格局与主要市场参与者",
+        "市场驱动因素与关键条件",
+        "未来发展趋势与Future Outlook",
+    ]
+    assert [report.markdown.index(title) for title in ordered_sections] == sorted(
+        report.markdown.index(title) for title in ordered_sections
     )
+    assert "市场规模测算方法与计算链" in report.markdown
+    assert "数量或规模输入" in report.markdown
     assert "预测方法" in report.markdown
     assert "因果情景" in report.markdown
     assert report.source_count == 1
+    assert not re.search(r"\b(?:EVD|FND|TRD|SCN)-[A-Za-z0-9_-]+\b", report.markdown)
+    assert "[1](https://example.gov.cn/report)" in report.markdown
     assert "➡" not in report.markdown
     assert "👉" not in report.markdown
     assert not any(line.startswith("- ") for line in report.markdown.splitlines())

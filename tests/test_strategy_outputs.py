@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from src.knowledge.sop import load_active_sop
@@ -432,6 +434,17 @@ def test_scorecard_and_action_plan_require_human_review() -> None:
     report = generate_enterprise_decision_report(project)
     assert "公司能力评分" in report.markdown
     assert "停止、调整或转向" in report.markdown
+    enterprise_sections = [
+        "企业战略意图与决策框架",
+        "公司能力评分",
+        "战略行动计划",
+        "推进顺序及组合风险",
+        "人工审核及责任边界",
+    ]
+    assert [report.markdown.index(title) for title in enterprise_sections] == sorted(
+        report.markdown.index(title) for title in enterprise_sections
+    )
+    assert not re.search(r"\b(?:EVD|FND|TRD|SCN|ENT|DIM|ACT)-[A-Za-z0-9_-]+\b", report.markdown)
     assert enterprise_id not in report.markdown
     assert evidence_id not in report.markdown
 

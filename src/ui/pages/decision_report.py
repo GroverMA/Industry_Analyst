@@ -19,6 +19,7 @@ from src.services.strategy_report import (
 from src.state.project import ProjectState, WorkflowStatus
 from src.state.session import queue_page_navigation, set_project
 from src.ui.components import page_header, require_project
+from src.ui.report_preview import render_report_preview
 
 
 def _safe_name(value: str) -> str:
@@ -57,8 +58,12 @@ def render(project: ProjectState | None) -> None:
         cols[0].metric("采用证据", len(general.accepted_evidence_ids))
         cols[1].metric("采用判断", len(general.accepted_finding_ids))
         cols[2].metric("独立来源", general.source_count)
-        with st.expander("预览通用行业报告", expanded=True):
-            st.markdown(general.markdown)
+        render_report_preview(
+            general.markdown,
+            key=f"decision_general_{project.project_id}",
+            expanded=True,
+            label="预览通用行业报告",
+        )
         general_context = project_report_context(
             project,
             title=general.title,
@@ -139,8 +144,12 @@ def render(project: ProjectState | None) -> None:
         return
 
     st.success("企业决策报告已生成；内部追溯关系保留在审核工作台，不进入正式交付正文。")
-    with st.expander("预览企业决策报告", expanded=True):
-        st.markdown(enterprise_report.markdown)
+    render_report_preview(
+        enterprise_report.markdown,
+        key=f"decision_enterprise_{project.project_id}",
+        expanded=True,
+        label="预览企业决策报告",
+    )
     enterprise_context = project_report_context(
         project,
         title=enterprise_report.title,

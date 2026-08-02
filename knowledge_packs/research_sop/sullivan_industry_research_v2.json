@@ -128,8 +128,8 @@
     },
     {
       "rule_id": "SUL-REPORT-001",
-      "title": "通用报告固定五章",
-      "instruction": "正式通用行业报告必须按行业定义、行业赛道与产业链、市场或行业规模测算、竞争格局、市场驱动因素及Future Outlook五章组织。用户Prompt决定重点与篇幅，但不得变成逐题问答；执行摘要、研究限制和资料来源可作为前后附加部分。",
+      "title": "通用报告固定六部分逻辑",
+      "instruction": "正式通用行业报告必须依次按行业定义、行业赛道与产业链、市场或特定赛道规模测算、竞争格局、市场驱动因素及Future Outlook六个部分组织。用户Prompt决定动态标题、分析重点与篇幅，但不得改变基础逻辑顺序或变成逐题问答；执行摘要和资料来源可作为前后附加部分。",
       "applies_to": ["report"]
     },
     {
@@ -177,7 +177,8 @@
       "industry_track_value_chain",
       "market_sizing",
       "competitive_landscape",
-      "drivers_future_outlook"
+      "drivers_constraints",
+      "future_outlook"
     ]
   }
 }

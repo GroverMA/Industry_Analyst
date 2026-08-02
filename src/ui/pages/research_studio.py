@@ -49,7 +49,10 @@ from src.services.enterprise_sensing import (
     upsert_enterprise_entry,
 )
 from src.services.company_assessment import company_scorecard_eligibility
-from src.services.report_generation import ReportGenerationError
+from src.services.report_generation import (
+    ReportGenerationError,
+    market_sizing_calculation_rows,
+)
 from src.services.report_export import (
     build_report_docx,
     build_report_pdf,
@@ -82,6 +85,7 @@ from src.ui.agent_services import (
     research_planning_service,
 )
 from src.ui.components import badge, information_card, page_header, require_project
+from src.ui.report_preview import render_report_preview
 
 
 MODE_LABELS = {
@@ -1366,8 +1370,11 @@ def _render_report(project: ProjectState) -> None:
             "以下研究重点仍存在部分覆盖或证据缺口："
             + "；".join(report.unresolved_prompt_questions)
         )
-    with st.expander("预览完整报告", expanded=True):
-        st.markdown(report.markdown)
+    render_report_preview(
+        report.markdown,
+        key=f"consultant_{project.project_id}",
+        expanded=True,
+    )
     safe_name = "-".join(project.project_name.split()) or "industry-report"
     export_context = project_report_context(
         project,
@@ -1608,6 +1615,16 @@ def _render_analysis_trace(project: ProjectState) -> None:
         st.info("尚未形成行业分析底稿。")
         return
     st.caption("以下内容解释正式报告中的行业定义、产业链、规模、竞争格局和驱动因素如何形成。")
+    st.markdown("### 市场规模测算逻辑")
+    st.caption(
+        "主方法按细分市场的数量与加权平均价格计算，自上而下方法用于独立校验；"
+        "表中同时记录统计口径和去重规则，避免上下游收入或新增与替换需求重复加总。"
+    )
+    st.dataframe(
+        market_sizing_calculation_rows(analysis),
+        hide_index=True,
+        width="stretch",
+    )
     for module in analysis.modules:
         with st.expander(module.title, expanded=False):
             st.write(module.executive_summary)
@@ -1883,7 +1900,12 @@ def _render_reviewer_workpapers(project: ProjectState) -> None:
     tabs = st.tabs(labels)
     with tabs[0]:
         st.info("这是报告优先生成的审阅稿。其余页签用于追溯引用、分析方法和决策逻辑。")
-        st.markdown(report.markdown)
+        render_report_preview(
+            report.markdown,
+            key=f"reviewer_{project.project_id}",
+            expanded=True,
+            label="预览完整审阅稿",
+        )
         _render_reviewer_report_downloads(project, report.markdown, report.title)
         if st.button(
             "按最新SOP重新生成分析与报告",

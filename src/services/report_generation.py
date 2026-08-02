@@ -121,7 +121,12 @@ class ReportGenerationService:
         contract = {
             "executive_summary": "完整正式段落",
             "section_plan": [
-                {"section_key": "competitive_landscape", "title": "按原始Prompt调整后的章节标题"}
+                {"section_key": "industry_definition", "title": "按原始Prompt调整后的章节标题"},
+                {"section_key": "market_value_chain", "title": "按原始Prompt调整后的章节标题"},
+                {"section_key": "market_status", "title": "按原始Prompt调整后的章节标题"},
+                {"section_key": "competitive_landscape", "title": "按原始Prompt调整后的章节标题"},
+                {"section_key": "drivers_constraints", "title": "按原始Prompt调整后的章节标题"},
+                {"section_key": "future_outlook", "title": "按原始Prompt调整后的章节标题"},
             ],
             "module_introductions": [
                 {"module_id": "market_status", "paragraph": "该章节的判断性导语"}
@@ -145,9 +150,12 @@ class ReportGenerationService:
                     "机构研究语体：章节标题下使用完整连续段落；先陈述现象或判断，再解释作用机制、"
                     "市场影响及适用边界；预测必须使用‘预计’‘可能’‘在……条件下’等审慎表达，并"
                     "明确反证条件。原始Prompt只用于确定研究重点和篇幅，不得按问答形式逐题回应。"
-                    "报告必须覆盖行业定义、行业赛道与产业链、市场规模、竞争格局、驱动因素与"
-                    "Future Outlook，但章节标题、顺序和篇幅必须依据用户原始Prompt灵活编排，"
-                    "不得机械照搬SOP。市场规模必须给出基于现有数据交叉推算的中心估计或合理区间，"
+                    "报告必须依次覆盖行业定义、行业赛道与产业链、市场或特定赛道规模测算、"
+                    "竞争格局、市场驱动因素及Future Outlook六个部分。章节顺序不得改变；章节标题"
+                    "应按用户原始Prompt动态命名，Prompt最关注的部分应增加信息密度与篇幅，但不得"
+                    "改写为逐题问答。市场规模必须给出基于现有数据交叉推算的中心估计或合理区间，"
+                    "并说明主测算公式、数量端输入、价格或单位价值输入、分项加总、重叠剔除及独立"
+                    "验证方法。"
                     "不得写无法量化或缺乏数据；不得机械套用单一CAGR；"
                     "驱动及趋势必须保持事实、机制、直接变量、行业影响与验证指标的闭环。"
                     "正文采用独立第三方视角直接表达结论，不得出现‘根据券商/研报/已接受证据’、"
@@ -496,7 +504,7 @@ def _generate_structured_audit_report_legacy(
             ]
         )
     lines.extend(["### Scenarios", ""])
-    for scenario in accepted_scenarios:
+    for scenario_index, scenario in enumerate(accepted_scenarios, start=1):
         lines.extend(
             [
                 f"- **{scenario.title}（{scenario.likelihood_label}）：** {scenario.narrative}",
@@ -566,27 +574,89 @@ def _generate_structured_audit_report_legacy(
 _REPORT_SYMBOLS = re.compile(
     "[\u2190-\u21ff\u2600-\u27bf\U0001F000-\U0001FAFF]"
 )
+_INTERNAL_REFERENCE_CODE = re.compile(
+    r"(?i)(?<![A-Za-z0-9])(?:EVD|FND|TRD|SCN|SRC|ENT|DIM|ACT)"
+    r"\s*[-–—_]\s*[A-Za-z0-9_-]+"
+)
+
+
+def _normalize_chinese_typography(value: Any) -> str:
+    """Repair common model spacing and punctuation artefacts in Chinese prose."""
+
+    text = str(value or "")
+    text = text.replace("`", "").replace("´", "").replace("•", "")
+    replacements = {
+        "capacity": "产能",
+        "pricing": "定价",
+        "penetration": "渗透率",
+        "margin": "盈利能力",
+        "volume": "需求量",
+    }
+    for source, target in replacements.items():
+        text = re.sub(rf"\b{source}\b", target, text, flags=re.IGNORECASE)
+    text = re.sub(r"[\u00a0\u2000-\u200b\u202f\u205f\u3000]+", " ", text)
+    text = re.sub(r"\s+([，。；：！？、）》】])", r"\1", text)
+    text = re.sub(r"([（《【])\s+", r"\1", text)
+    text = re.sub(r"(?<=[\u3400-\u9fff])\s+(?=[\u3400-\u9fff])", "", text)
+    text = re.sub(r"(?<=[\u3400-\u9fff])\s+(?=[A-Z]{2,}[0-9A-Z-]*\b)", "", text)
+    text = re.sub(r"(?<=[A-Z0-9%])\s+(?=[\u3400-\u9fff])", "", text)
+    text = re.sub(r"([，。；：！？、]){2,}", lambda match: match.group(0)[-1], text)
+    text = re.sub(r"^[\s、，；;:：]+", "", text)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
 
 
 def _plain_report_prose(value: Any) -> str:
     """Normalize model or artifact text into restrained institutional prose."""
 
     text = str(value or "").strip()
-    text = re.sub(r"\b(?:EVD|FND|TRD|SCN|SRC|ENT)-[A-Za-z0-9_-]+\b", "", text)
+    text = _INTERNAL_REFERENCE_CODE.sub("", text)
     text = _REPORT_SYMBOLS.sub("", text)
     text = re.sub(r"(?m)^\s*(?:[-*•]+|\d+[.)])\s+", "", text)
     text = re.sub(r"(?m)^\s*#{1,6}\s+", "", text)
+    text = re.sub(r"\s*#{1,6}\s+", " ", text)
     text = re.sub(r"(?:该|相关)?(?:报告|文章|资料)(预计|估计|认为|强调|显示|指出)", r"\1", text)
     text = re.sub(r"根据(?:券商|研究报告|研报)(?:的)?(?:预测|判断|数据)?[，,:：]?", "", text)
     text = text.replace("volume", "需求量").replace("price", "价格")
     text = text.replace("cost", "成本").replace("penetration", "渗透率")
-    text = text.replace("margin", "盈利能力")
+    text = text.replace("margin", "盈利能力").replace("capacity", "产能")
+    text = text.replace("pricing", "定价").replace("demand", "需求").replace("supply", "供给")
     text = re.sub(r"\bmixed\b", "双向", text, flags=re.IGNORECASE)
     text = re.sub(r"\bmoderate\b", "中等", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bpositive\b", "正向", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bnegative\b", "负向", text, flags=re.IGNORECASE)
     text = re.sub(r"\blow\b", "较低", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bhigh\b", "较高", text, flags=re.IGNORECASE)
     text = re.sub(r"若出现若", "若出现", text)
-    text = re.sub(r"\s+", " ", text)
-    return text.strip()
+    return _normalize_chinese_typography(text)
+
+
+def _scenario_title(value: Any) -> str:
+    """Return a reader-facing Chinese scenario name without internal enum labels."""
+
+    text = _plain_report_prose(value)
+    labels = {
+        "baseline": "基准情景",
+        "base case": "基准情景",
+        "accelerated": "加速情景",
+        "upside": "上行情景",
+        "blocked": "受阻情景",
+        "downside": "下行情景",
+    }
+    return labels.get(text.lower(), text)
+
+
+def _markdown_link(label: Any, url: Any) -> str:
+    """Build a source link that survives spaces, brackets and parentheses."""
+
+    safe_label = str(label or "资料来源").replace("[", "［").replace("]", "］")
+    safe_url = (
+        str(url or "").strip()
+        .replace(" ", "%20")
+        .replace("(", "%28")
+        .replace(")", "%29")
+    )
+    return f"[{safe_label}]({safe_url})"
 
 
 def _sentence(value: Any) -> str:
@@ -600,15 +670,22 @@ def _formal_paragraph(*parts: Any) -> str:
     return "".join(_sentence(part) for part in parts if _plain_report_prose(part))
 
 
-def _paragraph_blocks(value: Any, *, max_chars: int = 360) -> list[str]:
-    """Split institutional prose at sentence boundaries, never mid-sentence."""
+def _paragraph_blocks(value: Any, *, max_chars: int = 420) -> list[str]:
+    """Create readable logic-complete paragraphs without arbitrary line breaks."""
 
     text = _plain_report_prose(value)
     if not text:
         return []
+    protected_links: list[str] = []
+
+    def protect_link(match: re.Match[str]) -> str:
+        protected_links.append(match.group(0))
+        return f"〔引用链接{len(protected_links) - 1}〕"
+
+    text = re.sub(r"\[[^\]]+\]\(https?://[^)]+\)", protect_link, text)
     sentences = [
         item.strip()
-        for item in re.findall(r".*?(?:[。！？.!?]|$)", text)
+        for item in re.findall(r".*?(?:[。！？；.!?;]|$)", text)
         if item.strip()
     ]
     blocks: list[str] = []
@@ -621,6 +698,11 @@ def _paragraph_blocks(value: Any, *, max_chars: int = 360) -> list[str]:
             current += sentence
     if current:
         blocks.append(current)
+    if len(blocks) > 1 and len(blocks[-1]) < 90 and len(blocks[-2]) + len(blocks[-1]) <= max_chars + 80:
+        tail = blocks.pop()
+        blocks[-1] += tail
+    for index, link in enumerate(protected_links):
+        blocks = [block.replace(f"〔引用链接{index}〕", link) for block in blocks]
     return blocks
 
 
@@ -654,10 +736,18 @@ _FORMAL_REPORT_INTERNAL_MARKERS = re.compile(
 def _scrub_formal_paragraph(line: str) -> str:
     """Keep conclusions while removing source/process and uncertainty narration."""
 
+    text = _INTERNAL_REFERENCE_CODE.sub("", line)
+    protected_links: list[str] = []
+
+    def protect_link(match: re.Match[str]) -> str:
+        protected_links.append(match.group(0))
+        return f"〔链接{len(protected_links) - 1}〕"
+
+    text = re.sub(r"\[[^\]]+\]\(https?://[^)]+\)", protect_link, text)
     text = re.sub(
         r"基于已确认的?Research Brief和(?:所)?提供的公开证据[，,:：]?",
         "",
-        line,
+        text,
         flags=re.IGNORECASE,
     )
     text = re.sub(r"基于(?:现有)?公开资料(?:的)?", "", text)
@@ -672,7 +762,56 @@ def _scrub_formal_paragraph(line: str) -> str:
     cleaned = re.sub(r"\s*[（(]\s*[）)]", "", cleaned)
     cleaned = re.sub(r"[，,]\s*[，,]", "，", cleaned)
     cleaned = re.sub(r"若出现若", "若出现", cleaned)
-    return cleaned.strip()
+    for index, link in enumerate(protected_links):
+        cleaned = cleaned.replace(f"〔链接{index}〕", link)
+    return _normalize_chinese_typography(cleaned)
+
+
+def _strip_heading_number(title: str) -> str:
+    return re.sub(
+        r"^(?:\d+(?:[.．]\d+){0,3}|[A-Z](?:[.．]\d+)*)"
+        r"(?:[.．、:]|\s+|(?=[\u3400-\u9fff]))",
+        "",
+        title,
+        flags=re.IGNORECASE,
+    ).strip()
+
+
+def _normalize_formal_heading_hierarchy(markdown: str) -> str:
+    """Renumber every generated or Reviewer-edited report in reading order."""
+
+    top_level = 0
+    second_level = 0
+    third_level = 0
+    normalized: list[str] = []
+    for line in markdown.splitlines():
+        heading = re.match(r"^(#{1,4})\s+(.*)$", line)
+        if not heading:
+            normalized.append(line)
+            continue
+        marks, raw_title = heading.groups()
+        level = len(marks)
+        title = _strip_heading_number(raw_title)
+        if level == 1:
+            normalized.append(f"# {title}")
+            continue
+        if level == 2 and (title.startswith("执行摘要") or title.startswith("附录")):
+            normalized.append(f"## {title}")
+            continue
+        if level == 2:
+            top_level += 1
+            second_level = 0
+            third_level = 0
+            normalized.append(f"## {top_level}. {title}")
+            continue
+        if level == 3:
+            second_level += 1
+            third_level = 0
+            normalized.append(f"### {top_level}.{second_level} {title}")
+            continue
+        third_level += 1
+        normalized.append(f"#### {top_level}.{second_level}.{third_level} {title}")
+    return "\n".join(normalized)
 
 
 def sanitize_formal_report(markdown: str) -> str:
@@ -682,8 +821,7 @@ def sanitize_formal_report(markdown: str) -> str:
     formal prose remains an independent third-party research deliverable.
     """
 
-    text = re.sub(r"\b(?:EVD|FND|TRD|SCN|SRC|ENT|DIM|ACT)-[A-Za-z0-9_-]+\b", "", markdown)
-    text = re.sub(r"（资料来源：[^）]+）", "", text)
+    text = _INTERNAL_REFERENCE_CODE.sub("", markdown)
     text = _INTERNAL_REPORT_SENTENCES.sub("", text)
     text = re.sub(r"(?m)^## 附录A：证据边界、反证条件及研究限制\s*$.*?(?=^## |\Z)", "", text, flags=re.S)
     text = re.sub(r"(?m)^## 附录C：研究说明\s*$.*?(?=^## |\Z)", "", text, flags=re.S)
@@ -694,54 +832,57 @@ def sanitize_formal_report(markdown: str) -> str:
             in_references = True
             cleaned_lines.append(line)
             continue
-        if in_references or line.startswith("#") or not line.strip():
+        if in_references:
+            cleaned_lines.append(_INTERNAL_REFERENCE_CODE.sub("", line).replace("`", ""))
+            continue
+        if line.startswith("#"):
+            heading = re.match(r"^(#{1,6})\s+(.*)$", line)
+            if heading:
+                title = _normalize_chinese_typography(_INTERNAL_REFERENCE_CODE.sub("", heading.group(2)))
+                cleaned_lines.append(f"{heading.group(1)} {title}")
+            continue
+        if not line.strip():
             cleaned_lines.append(line)
+            continue
+        if line.lstrip().startswith("|"):
+            cleaned_lines.append(_normalize_chinese_typography(_INTERNAL_REFERENCE_CODE.sub("", line)))
             continue
         cleaned = _scrub_formal_paragraph(line)
         if cleaned:
             cleaned_lines.append(cleaned)
     text = "\n".join(cleaned_lines)
     text = re.sub(r"\n{3,}", "\n\n", text)
+    text = _normalize_formal_heading_hierarchy(text)
+    text = _INTERNAL_REFERENCE_CODE.sub("", text)
     return text.strip() + "\n"
 
 
 def _report_section_plan(project: ProjectState, narrative: dict[str, Any] | None) -> list[tuple[str, str]]:
-    """Prioritize chapters semantically while retaining complete SOP coverage."""
+    """Keep the SOP sequence fixed while letting the Prompt shape chapter names."""
 
     defaults = {
         "industry_definition": "行业定义与研究边界",
         "market_value_chain": "行业赛道与产业链",
         "market_status": "市场规模、结构与发展现状",
         "competitive_landscape": "竞争格局与主要市场参与者",
-        "drivers_future": "市场驱动因素与未来展望",
+        "drivers_constraints": "市场驱动因素与关键条件",
+        "future_outlook": "未来发展趋势与Future Outlook",
     }
     allowed = set(defaults)
     proposed = narrative.get("section_plan") if narrative else None
-    plan: list[tuple[str, str]] = []
+    proposed_titles: dict[str, str] = {}
     if isinstance(proposed, list):
         for row in proposed:
             if not isinstance(row, dict):
                 continue
             key = str(row.get("section_key") or "")
             title = _plain_report_prose(row.get("title"))
-            if key in allowed and key not in {item[0] for item in plan}:
-                plan.append((key, title or defaults[key]))
-    prompt = project.research_objective.lower()
-    priority: list[str] = []
-    keyword_map = (
-        ("competitive_landscape", ("竞争", "玩家", "可比公司", "market share")),
-        ("drivers_future", ("未来", "趋势", "驱动", "前景", "outlook")),
-        ("market_status", ("规模", "增速", "市场空间", "cagr")),
-        ("market_value_chain", ("产业链", "赛道", "商业模式", "客户")),
-    )
-    for key, keywords in keyword_map:
-        if any(word in prompt for word in keywords):
-            priority.append(key)
-    priority.append("industry_definition")
-    for key in (*priority, *defaults):
-        if key not in {item[0] for item in plan}:
-            plan.append((key, defaults[key]))
-    return plan
+            if key == "drivers_future":
+                proposed_titles.setdefault("drivers_constraints", "市场驱动因素与关键条件")
+                proposed_titles.setdefault("future_outlook", title or defaults["future_outlook"])
+            elif key in allowed:
+                proposed_titles[key] = title or defaults[key]
+    return [(key, proposed_titles.get(key, title)) for key, title in defaults.items()]
 
 
 def _validate_narrative_payload(
@@ -792,6 +933,130 @@ def _narrative_map(
         for row in rows
         if isinstance(row, dict) and _plain_report_prose(row.get("paragraph"))
     }
+
+
+def _first_dimension(dimensions: dict[str, str], *keys: str) -> str:
+    for key in keys:
+        value = _plain_report_prose(dimensions.get(key))
+        if value:
+            return value
+    return ""
+
+
+def _market_sizing_rows(module: Any) -> list[list[str]]:
+    """Translate sizing workpaper fields into an auditable reader-facing formula table."""
+
+    rows: list[list[str]] = []
+    findings = getattr(module, "findings", []) if module is not None else []
+    for finding in findings:
+        if finding.review_status != AnalysisReviewStatus.ACCEPTED:
+            continue
+        dimensions = finding.comparison_dimensions or {}
+        quantity = _first_dimension(
+            dimensions,
+            "quantity",
+            "volume",
+            "demand_quantity",
+            "customer_count",
+            "installed_base",
+            "base_market",
+        ) or "同口径销量、客户数、装机量或上级市场规模"
+        unit_value = _first_dimension(
+            dimensions,
+            "weighted_average_price",
+            "average_price",
+            "unit_price",
+            "unit_value",
+            "share",
+            "penetration_rate",
+        ) or "同一价格层级的加权平均价格、单位价值或目标市场占比"
+        formula = _first_dimension(dimensions, "formula", "calculation_formula", "sizing_formula")
+        if not formula:
+            formula = "分项规模＝数量端输入×价格或比例端输入"
+        result = _first_dimension(dimensions, "result", "market_size", "subtotal")
+        if not result and re.search(r"\d", finding.statement):
+            result = finding.statement
+        result = result or "分项计算后汇总为中心估计"
+        de_duplication = _first_dimension(
+            dimensions,
+            "double_counting_rule",
+            "overlap_rule",
+            "market_boundary",
+        ) or "按产品、客户与价值链口径去重，避免上下游收入重复加总"
+        rows.append(
+            [
+                _plain_report_prose(finding.subject) or "目标市场",
+                quantity,
+                unit_value,
+                formula,
+                result,
+                de_duplication,
+            ]
+        )
+        if len(rows) >= 6:
+            break
+    if not rows:
+        rows.append(
+            [
+                "目标市场",
+                "同口径销量、客户数、装机量或上级市场规模",
+                "加权平均价格、单位价值或目标市场占比",
+                "市场规模＝Σ（分项数量×分项加权平均价格）",
+                "分项加总形成中心估计与合理区间",
+                "剔除上下游、存量与新增需求之间的重复统计",
+            ]
+        )
+    return rows
+
+
+def market_sizing_calculation_rows(analysis: Any) -> list[dict[str, str]]:
+    """Expose the same sizing calculation chain in Reviewer workpapers."""
+
+    module = next(
+        (
+            item
+            for item in getattr(analysis, "modules", [])
+            if getattr(item, "module_id", "") == "market_status"
+        ),
+        None,
+    )
+    labels = ("测算对象", "数量或规模输入", "价格或比例输入", "计算公式", "测算结果", "口径与去重规则")
+    return [dict(zip(labels, row, strict=True)) for row in _market_sizing_rows(module)]
+
+
+def _append_market_sizing_methodology(
+    lines: list[str],
+    module: Any,
+    section_number: int,
+) -> None:
+    lines.extend([f"### {section_number}.1 市场规模测算方法与计算链", ""])
+    _append_paragraphs(
+        lines,
+        (
+            "本报告先统一产品与服务边界、地区、年份、收入或实物量、价格层级、税费以及新增、"
+            "替换和服务需求口径，再选择最符合行业交易逻辑的主测算方法。自下而上测算以各细分"
+            "产品或应用的数量乘以加权平均价格并加总；自上而下验证以上级市场规模乘以目标行业"
+            "占比进行交叉检查。两种方法的差异通过定义、覆盖率、价格层级与重叠项解释，不作机械平均。"
+        ),
+    )
+    lines.extend(
+        [
+            "| 测算对象 | 数量或规模输入 | 价格或比例输入 | 计算公式 | 测算结果 | 口径与去重规则 |",
+            "|---|---|---|---|---|---|",
+        ]
+    )
+    for row in _market_sizing_rows(module):
+        safe = [cell.replace("|", "／") for cell in row]
+        lines.append("| " + " | ".join(safe) + " |")
+    lines.append("")
+    _append_paragraphs(
+        lines,
+        (
+            "预测期不直接套用单一复合增长率，而是分别推演客户数量、销量或装机量、渗透率、"
+            "配置率、替换率、价格及单位价值的变化，并通过历史序列、代表性企业收入或独立市场"
+            "口径校验中心估计及合理区间。"
+        ),
+    )
 
 
 def generate_general_report(
@@ -845,7 +1110,7 @@ def generate_general_report(
         ordered_sources.append(source)
 
     def source_markers(evidence_ids: list[str]) -> str:
-        numbers = []
+        numbers: list[int] = []
         for evidence_id in evidence_ids:
             evidence_item = evidence_map.get(evidence_id)
             if evidence_item is None:
@@ -853,7 +1118,13 @@ def generate_general_report(
             number = source_numbers.get(evidence_item.source_id)
             if number is not None and number not in numbers:
                 numbers.append(number)
-        return "" if not numbers else "（资料来源：" + "、".join(f"[{number}]" for number in numbers) + "）"
+        if not numbers:
+            return ""
+        links = []
+        for number in numbers:
+            source = ordered_sources[number - 1]
+            links.append(_markdown_link(str(number), source.url))
+        return " " + " ".join(links)
 
     coverage = prompt_coverage or []
     module_paragraphs = _narrative_map(
@@ -910,8 +1181,13 @@ def generate_general_report(
     )
     module_map = {module.module_id: module for module in analysis.modules}
 
-    def render_modules(module_ids: tuple[str, ...], section_number: int) -> None:
-        subsection = 1
+    def render_modules(
+        module_ids: tuple[str, ...],
+        section_number: int,
+        *,
+        start_subsection: int = 1,
+    ) -> int:
+        subsection = start_subsection
         for module_id in module_ids:
             module = module_map.get(module_id)
             if module is None:
@@ -934,6 +1210,7 @@ def generate_general_report(
                 lines.extend([f"### {section_number}.{subsection} {item.subject}", ""])
                 _append_paragraphs(lines, paragraph + citations)
                 subsection += 1
+        return subsection
     section_plan = _report_section_plan(project, narrative)
     market_size_observations = [
         _plain_report_prose(item.statement)
@@ -952,8 +1229,9 @@ def generate_general_report(
         elif section_key == "market_value_chain":
             render_modules(("market_value_chain", "commercial_logic"), section_number)
         elif section_key == "market_status":
-            render_modules(("market_status",), section_number)
             market_findings = module_map.get("market_status")
+            _append_market_sizing_methodology(lines, market_findings, section_number)
+            render_modules(("market_status",), section_number, start_subsection=2)
             market_text = " ".join(
                 item.statement
                 for item in (market_findings.findings if market_findings else [])
@@ -972,7 +1250,7 @@ def generate_general_report(
                 )
         elif section_key == "competitive_landscape":
             render_modules(("competitive_landscape",), section_number)
-        elif section_key == "drivers_future":
+        elif section_key == "drivers_constraints":
             render_modules(("drivers_constraints",), section_number)
 
     method = future.forecast_methodology
@@ -992,7 +1270,7 @@ def generate_general_report(
         method.validation_design,
         method.prediction_interval,
     )
-    future_section = section_numbers["drivers_future"]
+    future_section = section_numbers["future_outlook"]
     lines.extend([f"### {future_section}.1 预测方法", ""])
     _append_paragraphs(lines, method_paragraph)
 
@@ -1018,7 +1296,7 @@ def generate_general_report(
         trend_subsection += 1
 
     lines.extend([f"### {future_section}.{trend_subsection} 情景分析", ""])
-    for scenario in accepted_scenarios:
+    for scenario_index, scenario in enumerate(accepted_scenarios, start=1):
         fallback = _formal_paragraph(
             scenario.narrative,
             f"该情景的当前可能性判断为{scenario.likelihood_label}",
@@ -1026,7 +1304,12 @@ def generate_general_report(
             f"若相关条件成立，预期结果包括{'、'.join(scenario.expected_outcomes)}",
             f"若出现{'、'.join(scenario.falsification_conditions)}，则该情景需要调整或失效",
         )
-        lines.extend([f"#### {scenario.title}", ""])
+        lines.extend(
+            [
+                f"#### {future_section}.{trend_subsection}.{scenario_index} {_scenario_title(scenario.title)}",
+                "",
+            ]
+        )
         _append_paragraphs(
             lines,
             scenario_paragraphs.get(scenario.scenario_id) or fallback,
@@ -1034,7 +1317,7 @@ def generate_general_report(
 
     lines.extend(["", "## 附录：资料来源", ""])
     for number, source in enumerate(ordered_sources, start=1):
-        lines.append(f"[{number}] [{source.title}]({source.url})。")
+        lines.append(f"[{number}] {_markdown_link(source.title, source.url)}。")
     unique_sources = {source_map[item.source_id].url for item in accepted_evidence}
     markdown = sanitize_formal_report("\n".join(lines))
     return GeneralReportArtifact(

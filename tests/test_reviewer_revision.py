@@ -131,3 +131,37 @@ def test_formal_report_sanitizer_keeps_internal_review_language_out_of_deliverab
     assert "置信度" not in cleaned
     assert "未纳入分析" not in cleaned
     assert "中国IVD行业将保持结构性增长" in cleaned
+
+
+def test_formal_report_sanitizer_repairs_numbering_spacing_and_reference_codes() -> None:
+    draft = """# Future Intelligence Test
+
+## 5. 市场驱动因素
+
+### 5.6 中 国 IVD 政 策 驱 动
+
+本 土 企 业 集 中。`供需` 动态包含 capacity 调整。EVD – 1cb324caac。
+
+## 2. Future Outlook
+
+### 2.1 预测方法
+
+未来市场保持结构性增长。[[1]](https://example.com/report)。
+
+## 附录：资料来源
+
+[1] [公开资料](https://example.com/report)。
+"""
+
+    cleaned = sanitize_formal_report(draft)
+
+    assert "# Future Intelligence Test" in cleaned
+    assert "## 1. 市场驱动因素" in cleaned
+    assert "### 1.1 中国IVD政策驱动" in cleaned
+    assert "## 2. Future Outlook" in cleaned
+    assert "### 2.1 预测方法" in cleaned
+    assert "本土企业集中" in cleaned
+    assert "产能调整" in cleaned
+    assert "EVD" not in cleaned
+    assert "`" not in cleaned
+    assert "[[1]](https://example.com/report)" in cleaned
