@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 from src.models.strategy import EnterpriseDecisionReportArtifact, StrategyReviewStatus
+from src.services.report_generation import sanitize_formal_report
 from src.state.project import ProjectState
 
 
@@ -177,7 +178,7 @@ def generate_enterprise_decision_report(project: ProjectState) -> EnterpriseDeci
     weighted_score = (
         f"{scorecard.weighted_score:.1f}分"
         if scorecard.weighted_score is not None
-        else "因证据覆盖不足暂未计算"
+        else "按当前已评分维度暂不汇总"
     )
     lines = [
         f"# {project.project_name} · 企业决策版",
@@ -215,15 +216,15 @@ def generate_enterprise_decision_report(project: ProjectState) -> EnterpriseDeci
             "",
             "### B.1 战略优势",
             "",
-            _paragraph(*(scorecard.strategic_advantages or ["现有证据尚不足以形成明确的战略优势判断"])),
+            _paragraph(*(scorecard.strategic_advantages or ["当前评分显示企业优势仍处于培育阶段"])),
             "",
             "### B.2 关键差距",
             "",
-            _paragraph(*(scorecard.critical_gaps or ["现有证据尚不足以形成明确的关键差距判断"])),
+            _paragraph(*(scorecard.critical_gaps or ["当前评分未识别需要单独列示的关键能力差距"])),
             "",
             "### B.3 跨维度风险",
             "",
-            _paragraph(*(scorecard.cross_dimension_risks or ["现有证据尚未识别额外的跨维度风险"])),
+            _paragraph(*(scorecard.cross_dimension_risks or ["当前评分未识别额外的跨维度风险"])),
             "",
             "## C. 经审核的战略行动计划",
             "",
@@ -288,12 +289,7 @@ def generate_enterprise_decision_report(project: ProjectState) -> EnterpriseDeci
             general.markdown,
         ]
     )
-    markdown = "\n".join(lines)
-    markdown = re.sub(
-        r"\b(?:EVD|FND|TRD|SCN|SRC|ENT|DIM|ACT)-[A-Za-z0-9_-]+\b",
-        "",
-        markdown,
-    )
+    markdown = sanitize_formal_report("\n".join(lines))
     return EnterpriseDecisionReportArtifact(
         title=f"{project.project_name} · 企业决策版",
         general_report_id=general.report_id,

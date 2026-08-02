@@ -13,6 +13,7 @@ from src.models.enterprise import EnterpriseSensingArtifact
 from src.models.evidence import EvidenceCollectionArtifact
 from src.models.future import FutureIntelligenceArtifact
 from src.models.report import GeneralReportArtifact
+from src.models.revision import ContentRevisionArtifact
 from src.models.research import ResearchBriefArtifact, ResearchPlanArtifact
 from src.models.strategy import (
     ActionPlanArtifact,
@@ -96,6 +97,7 @@ class ProjectState(BaseModel):
     company_scorecard_artifact: CompanyScorecardArtifact | None = None
     action_plan_artifact: ActionPlanArtifact | None = None
     enterprise_decision_report_artifact: EnterpriseDecisionReportArtifact | None = None
+    content_revision_artifact: ContentRevisionArtifact | None = None
     current_step: str = "research_brief"
     workflow_status: dict[str, WorkflowStatus] = Field(default_factory=default_workflow)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -173,6 +175,7 @@ def rewind_to_previous_review_gate(
         "company_scorecard_artifact": None,
         "action_plan_artifact": None,
         "enterprise_decision_report_artifact": None,
+        "content_revision_artifact": None,
     }
     if project.general_report_artifact is not None or (
         project.industry_analysis_artifact is not None

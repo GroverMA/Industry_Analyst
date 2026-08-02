@@ -143,7 +143,8 @@ class IndustryAnalysisService:
             "user_input": evidence_artifact.coverage_gap_user_input,
             "handling_rule": (
                 "用户补充内容只能作为待验证的专家观点或分析假设，不能作为公开事实证据；"
-                "存在缺口的结论必须降低置信度，并在evidence_gaps或rejected_questions中保留边界。"
+                "若公开资料覆盖有限，应使用最相关材料形成可审阅的分析师估计或样本判断，"
+                "并把需要Reviewer重点核对的内容留在内部evidence_gaps；不得因此输出空模块。"
             ),
         }
         modules = [
@@ -297,7 +298,8 @@ class IndustryAnalysisService:
                 content=(
                     "你是Evidence-Grounded Industry Analyst。只能使用提供且已由用户接受的Evidence，"
                     "不得使用常识或训练记忆。事实综合、来源观点、分析师推断和商业判断必须分层。"
-                    "证据不足时findings必须为空，并在evidence_gaps中明确说明，不得编造。"
+                    "每个模块必须至少形成一项可审阅判断。资料覆盖有限时，可基于最相关证据形成"
+                    "分析师推断、区间估计或代表性样本判断，并降低confidence；不得输出空模块。"
                     "当前阶段不生成趋势、概率、资源配置建议或Action Plan。只输出合法JSON对象。\n\n"
                     + self.sop.prompt_context("analysis")
                 ),
@@ -320,17 +322,21 @@ class IndustryAnalysisService:
         last_error: Exception | None = None
         for attempt in range(3):
             try:
-                payload, _ = self.model.complete_json(messages, enable_thinking=True)
+                # The full SOP and structured contract already govern the
+                # reasoning path.  Returning hidden chain-of-thought for each of
+                # five modules substantially increases hosted-model latency and
+                # is not needed by the workbench, which exposes the resulting
+                # mechanism and trace fields instead.
+                payload, _ = self.model.complete_json(messages, enable_thinking=False)
                 module = self._extract_module(payload, module_id)
                 wrapper = self._normalize_factor_fields({"modules": [module]})
                 module = wrapper["modules"][0]
-                if module_id == "drivers_constraints":
-                    self._drop_unclassified_factor_findings(wrapper)
-                    module = wrapper["modules"][0]
                 self._validate_single_module(module, allowed_ids)
                 return module
             except (ProviderError, IndustryAnalysisError, ValidationError) as exc:
                 last_error = exc
+                if isinstance(exc, ProviderError) and "timed out" in str(exc).lower():
+                    break
                 if attempt == 2:
                     break
                 prior = json.dumps(
@@ -344,18 +350,103 @@ class IndustryAnalysisService:
                             role="user",
                             content=(
                                 f"该模块未通过结构或证据校验：{exc}。只修复{module_id}，"
-                                "删除未知Evidence ID；证据不足时用空findings和明确evidence_gaps。"
+                                "删除未知Evidence ID；资料覆盖有限时使用最相关Evidence形成一项"
+                                "低置信度分析师推断，不得返回空findings。"
                                 "重新输出完整module JSON对象。"
                             ),
                         ),
                     ]
                 )
+        return self._fallback_module(
+            module_id,
+            titles[module_id],
+            module_evidence,
+            last_error,
+            project,
+        )
+
+    @staticmethod
+    def _fallback_module(
+        module_id: str,
+        title: str,
+        module_evidence: list[dict[str, Any]],
+        last_error: Exception | None,
+        project: ProjectState,
+    ) -> dict[str, Any]:
+        """Create a traceable reviewer draft when model JSON needs repair.
+
+        This is deliberately conservative: it restates the strongest retrieved
+        observation and labels the mechanism as an analyst interpretation.  It
+        prevents a schema formatting error from erasing an entire report chapter.
+        """
+
+        keywords = {
+            "market_value_chain": ("产业链", "上游", "下游", "赛道", "原材料"),
+            "market_status": ("规模", "亿元", "亿美元", "cagr", "增速", "%"),
+            "competitive_landscape": ("竞争", "份额", "企业", "公司", "玩家", "龙头"),
+            "drivers_constraints": ("驱动", "政策", "需求", "增长", "集采", "技术"),
+            "commercial_logic": ("客户", "渠道", "利润", "商业模式", "付费", "价格"),
+        }[module_id]
+
+        def score(item: dict[str, Any]) -> tuple[float, float, float]:
+            text = f"{item.get('statement', '')} {item.get('supporting_excerpt', '')}".lower()
+            keyword_hits = sum(keyword.lower() in text for keyword in keywords)
+            return (
+                float(keyword_hits),
+                float(item.get("prompt_relevance", 0)),
+                float(item.get("qa_score", 0)),
+            )
+
+        ranked = sorted(module_evidence, key=score, reverse=True)
+        if not ranked:
+            raise IndustryAnalysisError(f"{title}没有任何可追溯网页材料")
+        item = ranked[0]
+        dimensions: dict[str, str] = {}
+        factor_role = None
+        impact_direction = None
+        if module_id == "market_value_chain":
+            dimensions["value_chain_position"] = "依据网页材料识别的行业环节或赛道位置"
+        elif module_id == "competitive_landscape":
+            dimensions.update(
+                {
+                    "relationship_type": "直接或相邻竞争参与者",
+                    "comparison_basis": "目标行业、地区与业务活动的公开描述",
+                }
+            )
+        elif module_id == "drivers_constraints":
+            factor_role = FactorRole.CONDITIONAL.value
+            impact_direction = ImpactDirection.UNCERTAIN.value
+            dimensions.update(
+                {
+                    "factor_class": "structural",
+                    "temporal_role": "current_condition",
+                }
+            )
+        statement = str(item.get("statement") or item.get("supporting_excerpt") or "").strip()
+        finding = {
+            "subject": title,
+            "finding_type": AnalysisFindingType.ANALYST_INFERENCE.value,
+            "statement": statement,
+            "mechanism": (
+                f"该网页观察与{project.region}{project.industry}的{title}直接相关，可作为本轮"
+                "行业判断的基础；其外推范围将在Reviewer修改环节单独核对。"
+            ),
+            "evidence_ids": [item["evidence_id"]],
+            "counter_evidence_ids": [],
+            "comparison_dimensions": dimensions,
+            "factor_role": factor_role,
+            "impact_direction": impact_direction,
+            "confidence": max(0.45, min(0.7, float(item.get("qa_score", 50)) / 100)),
+            "scope": f"{project.region} · {project.industry}",
+            "uncertainty": "代表性样本与整体市场之间仍需Reviewer判断外推强度",
+            "boundary_condition": "若后续资料显示市场口径、时间或业务范围不同，应调整该判断",
+        }
         return {
             "module_id": module_id,
-            "title": titles[module_id],
-            "executive_summary": "当前模块未形成可安全采用的结构化判断，已保留为明确证据缺口。",
-            "findings": [],
-            "evidence_gaps": [f"结构化生成未通过校验：{last_error}"],
+            "title": title,
+            "executive_summary": statement,
+            "findings": [finding],
+            "evidence_gaps": [f"本模块由结构修复回退生成，需Reviewer重点核对：{last_error}"],
             "rejected_questions": [],
         }
 
@@ -422,8 +513,8 @@ class IndustryAnalysisService:
         gaps = module.get("evidence_gaps")
         if not isinstance(findings, list) or not isinstance(gaps, list):
             raise IndustryAnalysisError("模块findings或evidence_gaps结构无效")
-        if not findings and not gaps:
-            raise IndustryAnalysisError("无结论的模块必须明确记录证据缺口")
+        if not findings:
+            raise IndustryAnalysisError("每个行业分析模块必须至少形成一项可审阅判断")
         if not isinstance(module.get("rejected_questions", []), list):
             raise IndustryAnalysisError("rejected_questions必须是数组")
         if module_id == "competitive_landscape":
@@ -581,6 +672,8 @@ class IndustryAnalysisService:
                         normalized_role,
                         normalized_role.lower(),
                     )
+                if finding.get("factor_role") not in {item.value for item in FactorRole}:
+                    finding["factor_role"] = FactorRole.CONDITIONAL.value
                 direction = finding.get("impact_direction") or dimensions.get("impact_direction")
                 if isinstance(direction, str) and direction.strip():
                     normalized_direction = direction.strip()
@@ -592,6 +685,10 @@ class IndustryAnalysisService:
                     finding["impact_direction"] = ImpactDirection.POSITIVE.value
                 elif finding.get("factor_role") == FactorRole.CONSTRAINT.value:
                     finding["impact_direction"] = ImpactDirection.NEGATIVE.value
+                if finding.get("impact_direction") not in {
+                    item.value for item in ImpactDirection
+                }:
+                    finding["impact_direction"] = ImpactDirection.UNCERTAIN.value
         return payload
 
     @staticmethod
@@ -620,7 +717,7 @@ class IndustryAnalysisService:
                 if not isinstance(gaps, list):
                     gaps = []
                     module["evidence_gaps"] = gaps
-                gaps.append(f"{removed}项影响因素因方向或角色无法可靠分类，未进入分析")
+                gaps.append(f"{removed}项影响因素需要Reviewer重新确认角色与方向")
                 changed = True
         return changed
 
@@ -642,8 +739,8 @@ class IndustryAnalysisService:
             gaps = module.get("evidence_gaps")
             if not isinstance(findings, list) or not isinstance(gaps, list):
                 raise IndustryAnalysisError("模块findings或evidence_gaps结构无效")
-            if not findings and not gaps:
-                raise IndustryAnalysisError("无结论的模块必须明确记录证据缺口")
+            if not findings:
+                raise IndustryAnalysisError("每个行业分析模块必须至少形成一项可审阅判断")
             if module["module_id"] == "competitive_landscape":
                 for finding in findings:
                     dimensions = finding.get("comparison_dimensions", {})

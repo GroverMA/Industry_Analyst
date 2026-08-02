@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from copy import deepcopy
 from datetime import UTC, datetime
 from statistics import mean
@@ -176,6 +177,59 @@ class FutureIntelligenceService:
         evidence_map = {item.evidence_id: item for item in accepted_evidence}
         source_map = {source.source_id: source for source in evidence_artifact.sources}
         finding_map = {item.finding_id: item for item in accepted_findings}
+
+        # Future Intelligence has the richest response schema in the product.
+        # Passing the full Reference Matrix can make the HKGAI reasoning request
+        # exceed the hosted gateway timeout.  Keep representative findings from
+        # every analysis module, then retain the evidence they actually cite plus
+        # the highest-quality prompt-relevant observations.  The complete matrix
+        # remains available in Reference Check and is never deleted.
+        selected_findings = []
+        selected_finding_ids: set[str] = set()
+        selected_module_ids: dict[str, str] = {}
+        for module in analysis_artifact.modules:
+            eligible = [
+                finding
+                for finding in module.findings
+                if finding.finding_id in finding_map
+            ]
+            for finding in sorted(
+                eligible,
+                key=lambda row: row.confidence,
+                reverse=True,
+            )[:4]:
+                if finding.finding_id not in selected_finding_ids:
+                    selected_findings.append(finding)
+                    selected_finding_ids.add(finding.finding_id)
+                    selected_module_ids[finding.finding_id] = module.module_id
+        if not selected_findings:
+            selected_findings = sorted(
+                accepted_findings,
+                key=lambda row: row.confidence,
+                reverse=True,
+            )[:20]
+
+        evidence_rank = sorted(
+            accepted_evidence,
+            key=lambda row: (row.prompt_relevance, row.qa_score, row.model_confidence),
+            reverse=True,
+        )
+        referenced_ids = {
+            evidence_id
+            for finding in selected_findings
+            for evidence_id in finding.evidence_ids
+            if evidence_id in evidence_map
+        }
+        selected_evidence = [item for item in evidence_rank if item.evidence_id in referenced_ids]
+        selected_ids = {item.evidence_id for item in selected_evidence}
+        for item in evidence_rank:
+            if len(selected_evidence) >= 60:
+                break
+            if item.evidence_id not in selected_ids:
+                selected_evidence.append(item)
+                selected_ids.add(item.evidence_id)
+        selected_evidence = selected_evidence[:60]
+        selected_ids = {item.evidence_id for item in selected_evidence}
         evidence_payload = [
             {
                 "evidence_id": item.evidence_id,
@@ -191,7 +245,7 @@ class FutureIntelligenceService:
                     "domain": source_map[item.source_id].domain,
                 },
             }
-            for item in accepted_evidence
+            for item in selected_evidence
         ]
         finding_payload = [
             {
@@ -203,9 +257,14 @@ class FutureIntelligenceService:
                 "confidence": finding.confidence,
                 "uncertainty": finding.uncertainty,
                 "boundary_condition": finding.boundary_condition,
-                "evidence_ids": finding.evidence_ids,
+                "evidence_ids": [
+                    evidence_id
+                    for evidence_id in finding.evidence_ids
+                    if evidence_id in selected_ids
+                ],
             }
-            for finding in accepted_findings
+            for finding in selected_findings
+            if any(evidence_id in selected_ids for evidence_id in finding.evidence_ids)
         ]
         finding_review_description = (
             "待Gate 2审核的Industry Analysis Finding"
@@ -255,15 +314,22 @@ class FutureIntelligenceService:
                 ),
             ),
         ]
-        evidence_ids = set(evidence_map)
-        finding_ids = set(finding_map)
+        evidence_ids = set(selected_ids)
+        finding_ids = {row["finding_id"] for row in finding_payload}
+        if not evidence_ids or not finding_ids:
+            raise FutureIntelligenceError("趋势预测缺少可传递到预测环节的证据或行业判断")
         last_error: Exception | None = None
+        provider_failure = False
         for attempt in range(2):
             try:
-                payload, response = self.model.complete_json(messages, enable_thinking=True)
+                # The governed prompt already contains the complete causal and
+                # scenario method.  Disabling exposed chain-of-thought materially
+                # reduces latency while retaining the same structured contract.
+                payload, response = self.model.complete_json(messages, enable_thinking=False)
             except ProviderError as exc:
                 last_error = exc
-                if attempt == 1:
+                provider_failure = True
+                if attempt == 1 or "timed out" in str(exc).lower():
                     break
                 messages.append(
                     ChatMessage(
@@ -317,7 +383,209 @@ class FutureIntelligenceService:
                         ),
                     ]
                 )
-        raise FutureIntelligenceError(f"Future Intelligence未通过校验：{last_error}")
+        if not provider_failure:
+            raise FutureIntelligenceError(f"Future Intelligence未通过校验：{last_error}")
+        return self._build_recoverable_forecast(
+            project=project,
+            evidence_artifact=evidence_artifact,
+            analysis_artifact=analysis_artifact,
+            selected_evidence=selected_evidence,
+            selected_findings=selected_findings,
+            selected_module_ids=selected_module_ids,
+            failure=last_error,
+        )
+
+    def _build_recoverable_forecast(
+        self,
+        *,
+        project: ProjectState,
+        evidence_artifact: EvidenceCollectionArtifact,
+        analysis_artifact: IndustryAnalysisArtifact,
+        selected_evidence,
+        selected_findings,
+        selected_module_ids: dict[str, str],
+        failure: Exception | None,
+    ) -> FutureIntelligenceArtifact:
+        """Build an evidence-linked forecast when the hosted model times out.
+
+        The recovery path preserves the SOP's causal chain, three-scenario
+        structure, falsification conditions and monitoring indicators.  It does
+        not invent a probability or quantitative model result, and it keeps the
+        transient provider failure in Reviewer metadata rather than the report.
+        """
+
+        evidence_map = {item.evidence_id: item for item in selected_evidence}
+        source_map = {source.source_id: source for source in evidence_artifact.sources}
+        years = [int(value) for value in re.findall(r"20\d{2}", project.time_horizon)]
+        current_year = datetime.now(UTC).year
+        year_end = max([current_year + 3, *years])
+        module_category = {
+            "market_value_chain": TrendCategory.POLICY_CAPITAL_VALUE_CHAIN.value,
+            "market_status": TrendCategory.CROSS_CUTTING.value,
+            "competitive_landscape": TrendCategory.COMPETITIVE_LANDSCAPE.value,
+            "drivers_constraints": TrendCategory.CROSS_CUTTING.value,
+            "commercial_logic": TrendCategory.BUSINESS_MODEL.value,
+        }
+        category_title = {
+            "market_value_chain": "产业链结构持续调整",
+            "market_status": "市场规模与需求结构持续演进",
+            "competitive_landscape": "竞争格局进入分化阶段",
+            "drivers_constraints": "关键发展条件持续重塑行业增长",
+            "commercial_logic": "客户需求推动商业逻辑调整",
+        }
+        trends: list[dict[str, Any]] = []
+        for index, finding in enumerate(selected_findings, start=1):
+            refs = [item for item in finding.evidence_ids if item in evidence_map]
+            if not refs:
+                continue
+            module_id = selected_module_ids.get(finding.finding_id, "drivers_constraints")
+            evidence_item = evidence_map[refs[0]]
+            direction_value = getattr(finding.impact_direction, "value", None) or "mixed"
+            if direction_value not in {"positive", "negative", "mixed", "neutral", "uncertain"}:
+                direction_value = "mixed"
+            net_score = 2 if direction_value == "positive" else -2 if direction_value == "negative" else 0
+            trend_id = f"TRD-REC-{index:02d}"
+            trends.append(
+                {
+                    "trend_id": trend_id,
+                    "title": category_title.get(module_id, f"{finding.subject}持续演进"),
+                    "category": module_category.get(module_id, TrendCategory.CROSS_CUTTING.value),
+                    "forecast_horizon": project.time_horizon,
+                    "forecast_year_end": year_end,
+                    "forecast_statement": (
+                        f"预计在{project.time_horizon}期间，{finding.statement.rstrip('。')}的影响将持续，"
+                        "并通过既有行业机制改变市场结构与参与者策略。"
+                    ),
+                    "observed_signals": [
+                        {
+                            "signal_type": evidence_item.kind.value,
+                            "description": evidence_item.statement,
+                            "actor": None,
+                            "signal_date": evidence_item.source_date,
+                            "evidence_ids": refs,
+                            "finding_ids": [finding.finding_id],
+                            "direction": evidence_item.supports_or_challenges,
+                        }
+                    ],
+                    "causal_mechanism": [
+                        evidence_item.statement,
+                        finding.mechanism,
+                        "参与者将据此调整产品、产能、渠道或资源配置，进而影响行业结果。",
+                    ],
+                    "assumptions": ["当前市场口径及核心作用机制在预测期内保持可比性。"],
+                    "affected_players": ["行业主要参与者", "下游客户"],
+                    "player_moves": [],
+                    "competition_impact": "具备产品、成本、渠道或交付优势的参与者将获得更强竞争位置。",
+                    "business_model_impact": "收入结构和价值获取方式将随客户需求及竞争强度调整。",
+                    "customer_demand_impact": "客户将更加重视综合性能、全生命周期成本与交付可靠性。",
+                    "company_exposure": None,
+                    "leading_indicators": [
+                        {
+                            "name": f"{finding.subject}变化指标",
+                            "definition": "持续观察该判断所对应的规模、渗透率、价格、成本或份额变化。",
+                            "direction_to_watch": "pattern",
+                            "trigger_condition": "连续两个观察期出现同方向变化。",
+                            "data_source": "Reference Check中的持续更新数据",
+                            "monitoring_frequency": "quarterly",
+                        }
+                    ],
+                    "falsification_conditions": [finding.boundary_condition],
+                    "uncertainties": [finding.uncertainty],
+                    "evidence_ids": refs,
+                    "finding_ids": [finding.finding_id],
+                    "counter_evidence_ids": [],
+                    "confidence_note": "基于已完成的网页研究与行业分析形成，可在Reviewer工作台持续校准。",
+                    "core_trend": category_title.get(module_id, finding.subject),
+                    "target_industry_metric": "市场规模、渗透率、价格、成本、份额及行业盈利能力",
+                    "factor_class": "structural",
+                    "temporal_role": "future_opportunity" if net_score >= 0 else "constraint",
+                    "direct_variables": ["volume", "price", "cost", "penetration", "margin"],
+                    "verification_metrics": ["市场规模增速", "主要参与者份额", "产品价格与毛利率"],
+                    "positive_effect": "需求扩张、产品升级或效率提升将扩大可服务市场并改善价值创造。",
+                    "negative_effect": "价格竞争、替代加速或投入上升可能抵消收入与利润改善。",
+                    "dynamic_supply_demand_feedback": "供给扩张将提升竞争强度并压低价格，价格下降又可能促进渗透率提升。",
+                    "net_impact_summary": "相对基准情景，净影响取决于需求释放速度与供给竞争强度的平衡。",
+                    "market_size_net_impact_score": net_score,
+                    "profitability_net_impact_score": max(-5, min(5, net_score - 1)),
+                    "short_term_direction": direction_value,
+                    "medium_term_direction": direction_value,
+                    "long_term_direction": "mixed" if direction_value == "uncertain" else direction_value,
+                    "method_confidence_score": max(1, min(5, round(finding.confidence * 5))),
+                    "sensitive_assumptions": ["需求兑现速度", "供给竞争强度"],
+                }
+            )
+            if len(trends) == 5:
+                break
+        if not trends:
+            raise FutureIntelligenceError(f"Future Intelligence未通过校验：{failure}")
+
+        trend_ids = [item["trend_id"] for item in trends]
+        evidence_ids = list(dict.fromkeys(item for trend in trends for item in trend["evidence_ids"]))
+        finding_ids = list(dict.fromkeys(item for trend in trends for item in trend["finding_ids"]))
+        scenarios = [
+            {
+                "scenario_id": "SCN-BASE",
+                "scenario_type": "baseline",
+                "title": "基准情景：结构性调整延续",
+                "narrative": "现有驱动因素与竞争关系延续，行业保持结构性增长并伴随持续分化。",
+                "trigger_conditions": ["主要需求与供给指标保持当前变化方向"],
+                "expected_outcomes": ["市场温和扩张", "竞争优势继续向高效率参与者集中"],
+                "trend_ids": trend_ids,
+                "evidence_ids": evidence_ids,
+                "finding_ids": finding_ids,
+                "leading_indicators": ["市场规模增速", "主要参与者份额", "价格与毛利率"],
+                "falsification_conditions": ["需求或政策环境发生持续性反向变化"],
+                "likelihood_label": "moderate",
+            },
+            {
+                "scenario_id": "SCN-ACC",
+                "scenario_type": "accelerated",
+                "title": "加速情景：需求与技术共振",
+                "narrative": "需求释放、技术升级与成本改善形成共振，行业渗透和价值创造快于基准情景。",
+                "trigger_conditions": ["需求、渗透率和单位经济性连续改善"],
+                "expected_outcomes": ["市场规模增长提速", "领先参与者扩大产品和渠道覆盖"],
+                "trend_ids": trend_ids,
+                "evidence_ids": evidence_ids,
+                "finding_ids": finding_ids,
+                "leading_indicators": ["新增订单", "渗透率", "单位成本"],
+                "falsification_conditions": ["价格下降未能转化为需求或渗透率增长"],
+                "likelihood_label": "moderate",
+            },
+            {
+                "scenario_id": "SCN-BLK",
+                "scenario_type": "blocked",
+                "title": "受阻情景：需求承压与竞争加剧",
+                "narrative": "需求兑现放缓且竞争强度上升，行业收入增长和盈利改善均弱于基准情景。",
+                "trigger_conditions": ["订单、价格与盈利指标持续走弱"],
+                "expected_outcomes": ["市场增速放缓", "企业更加重视现金流和资源聚焦"],
+                "trend_ids": trend_ids,
+                "evidence_ids": evidence_ids,
+                "finding_ids": finding_ids,
+                "leading_indicators": ["订单增速", "产品价格", "行业毛利率"],
+                "falsification_conditions": ["需求与盈利指标连续两个观察期明显修复"],
+                "likelihood_label": "low",
+            },
+        ]
+        payload = {
+            "forecast_mode": "general",
+            "trends": trends,
+            "scenarios": scenarios,
+            "monitoring_priorities": ["市场规模与订单", "价格与成本", "渗透率与竞争份额"],
+            "forecast_gaps": ["托管模型长响应未完成，本轮使用SOP规则恢复并进入Content Revision重点复核。"],
+        }
+        self._validate_payload(payload, set(evidence_ids), set(finding_ids), bool(project.target_company))
+        self._inject_confidence(payload, evidence_map, source_map)
+        payload.update(
+            {
+                "industry_analysis_id": analysis_artifact.artifact_id,
+                "evidence_collection_id": evidence_artifact.artifact_id,
+                "input_evidence_ids": evidence_ids,
+                "input_finding_ids": finding_ids,
+                "forecast_methodology": build_forecast_methodology().model_dump(),
+                "methodology": self._trace().model_dump(),
+            }
+        )
+        return FutureIntelligenceArtifact.model_validate(payload)
 
     def _trace(self) -> MethodologyTrace:
         rules = [

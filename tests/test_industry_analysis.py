@@ -200,7 +200,7 @@ def test_analysis_only_sends_human_accepted_evidence() -> None:
     }
 
 
-def test_unknown_evidence_id_becomes_explicit_module_gap() -> None:
+def test_unknown_evidence_id_falls_back_to_traceable_module_finding() -> None:
     artifact, _, _ = evidence_artifact()
     model = FakeModel(valid_payload("EVD-unknown"))
     service = IndustryAnalysisService(model, load_active_sop())
@@ -208,8 +208,11 @@ def test_unknown_evidence_id_becomes_explicit_module_gap() -> None:
     analysis = service.generate(project(), artifact)
 
     assert model.calls == 15
-    assert all(not module.findings for module in analysis.modules)
-    assert all(module.evidence_gaps for module in analysis.modules)
+    assert all(module.findings for module in analysis.modules)
+    assert all(
+        module.findings[0].evidence_ids == [artifact.evidence[0].evidence_id]
+        for module in analysis.modules
+    )
 
 
 def test_analysis_retries_one_invalid_json_response() -> None:
@@ -260,7 +263,7 @@ def test_factor_role_accepts_semantic_user_facing_label() -> None:
     assert factor_finding.factor_role.value == "enabling_condition"
 
 
-def test_unclassified_factor_becomes_gap_instead_of_failing_report() -> None:
+def test_unclassified_factor_is_normalized_for_reviewer_draft() -> None:
     artifact, accepted_id, _ = evidence_artifact()
     generated = valid_payload(accepted_id)
     factor_module = next(
@@ -278,8 +281,9 @@ def test_unclassified_factor_becomes_gap_instead_of_failing_report() -> None:
         if module.module_id == "drivers_constraints"
     )
 
-    assert factor_result.findings == []
-    assert any("无法可靠分类" in gap for gap in factor_result.evidence_gaps)
+    assert len(factor_result.findings) == 1
+    assert factor_result.findings[0].factor_role.value == "conditional"
+    assert factor_result.findings[0].impact_direction.value == "uncertain"
 
 
 def test_string_null_factor_fields_do_not_block_analysis_assembly() -> None:

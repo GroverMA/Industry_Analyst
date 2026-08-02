@@ -231,4 +231,5 @@ def test_gate_allows_reviewed_evidence_and_preserves_uncovered_question() -> Non
     assert reasons == []
     assert any("T01-Q2" in detail for detail in gaps["T01"])
     assert advisories[0]["task_id"] == "T01"
-    assert "降低结论置信度" in advisories[0]["recommended_handling"]
+    assert "Content Revision" in advisories[0]["recommended_handling"]
+    assert "建议补充" not in advisories[0]["recommended_handling"]

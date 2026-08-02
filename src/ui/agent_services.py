@@ -18,6 +18,7 @@ from src.services.industry_analysis import IndustryAnalysisService
 from src.services.research_planning import ResearchPlanningService
 from src.services.report_generation import ReportGenerationService
 from src.services.reviewer_orchestration import ReviewerOrchestrationService
+from src.services.reviewer_revision import ReviewerRevisionService
 
 
 def research_planning_service() -> ResearchPlanningService:
@@ -28,7 +29,7 @@ def research_planning_service() -> ResearchPlanningService:
     )
 
 
-EVIDENCE_SERVICE_CACHE_VERSION = "reviewer-report-first-v1"
+EVIDENCE_SERVICE_CACHE_VERSION = "reviewer-content-revision-v2"
 
 
 @st.cache_resource(show_spinner=False)
@@ -108,3 +109,8 @@ def reviewer_orchestration_service() -> ReviewerOrchestrationService:
         company=company_assessment_service(),
         action=action_planning_service(),
     )
+
+
+def reviewer_revision_service() -> ReviewerRevisionService:
+    settings = Settings.load()
+    return ReviewerRevisionService(model=HKGAIModelProvider(settings))

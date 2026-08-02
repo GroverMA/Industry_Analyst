@@ -19,6 +19,7 @@ from src.models.enterprise import (
 )
 from src.models.evidence import EvidenceCollectionArtifact, EvidenceReviewStatus
 from src.models.future import ForecastReviewStatus, ScenarioType
+from src.models.revision import RevisionTarget
 from src.models.research import MarketDefinition, ResearchBriefArtifact, ResearchIntent
 from src.providers.base import ProviderError
 from src.services.evidence_collection import (
@@ -56,6 +57,13 @@ from src.services.report_export import (
 )
 from src.services.research_planning import SOPComplianceError
 from src.services.reviewer_orchestration import ReviewerPipelineError
+from src.services.reviewer_revision import (
+    ReviewerRevisionError,
+    finalize_revision,
+    initialize_revision,
+    reviewer_attention_points,
+    save_report_version,
+)
 from src.state.project import (
     ProjectState,
     WorkflowStatus,
@@ -70,6 +78,7 @@ from src.ui.agent_services import (
     industry_analysis_service,
     report_generation_service,
     reviewer_orchestration_service,
+    reviewer_revision_service,
     research_planning_service,
 )
 from src.ui.components import badge, information_card, page_header, require_project
@@ -92,6 +101,7 @@ def _strategy_output_reset() -> dict:
         "company_scorecard_artifact": None,
         "action_plan_artifact": None,
         "enterprise_decision_report_artifact": None,
+        "content_revision_artifact": None,
     }
 
 
@@ -391,6 +401,13 @@ def _pipeline_flags(project: ProjectState) -> list[tuple[str, bool]]:
             (
                 "Enterprise Report" if project.company_strategy_enabled else "General Report",
                 report_ready,
+            ),
+            (
+                "Content Revision",
+                bool(
+                    project.content_revision_artifact
+                    and project.content_revision_artifact.finalized
+                ),
             ),
             ("Reference Check", bool(evidence and evidence.evidence)),
             ("Industry Analysis", project.industry_analysis_artifact is not None),
@@ -1457,6 +1474,30 @@ def _run_reviewer_report_pipeline(project: ProjectState) -> None:
     st.rerun()
 
 
+def _rerun_reviewer_analysis(project: ProjectState) -> None:
+    """Regenerate analytical layers under the latest SOP without new searching."""
+
+    statuses = dict(project.workflow_status)
+    for step in ("industry_analysis", "future_intelligence", "decision_report"):
+        statuses[step] = WorkflowStatus.NOT_STARTED
+    refreshed = project.model_copy(
+        update={
+            "industry_analysis_artifact": None,
+            "future_intelligence_artifact": None,
+            "general_report_artifact": None,
+            "company_scorecard_artifact": None,
+            "action_plan_artifact": None,
+            "enterprise_decision_report_artifact": None,
+            "content_revision_artifact": None,
+            "workflow_status": statuses,
+            "last_pipeline_error": None,
+            "updated_at": datetime.now(UTC),
+        }
+    )
+    _save(refreshed)
+    _run_reviewer_report_pipeline(refreshed)
+
+
 def _render_reviewer_report_downloads(project: ProjectState, markdown: str, title: str) -> None:
     safe_name = "-".join(project.project_name.split()) or "industry-report"
     export_context = project_report_context(
@@ -1554,10 +1595,10 @@ def _render_reference_check(project: ProjectState) -> None:
     )
     gaps = evidence_coverage_advisories(artifact, project.research_plan_artifact)
     if gaps:
-        with st.expander("查看未充分覆盖的问题与分析师处理方式"):
+        with st.expander("查看需要重点复核的问题与当前处理方式"):
             for item in gaps:
                 st.write(
-                    f"- {item['task_id']}：{item['missing_questions']}。建议：{item['recommended_handling']}"
+                    f"- {item['task_id']}：{item['missing_questions']}。当前处理：{item['recommended_handling']}"
                 )
 
 
@@ -1661,6 +1702,164 @@ def _render_action_plan_trace(project: ProjectState) -> None:
             )
 
 
+def _render_content_revision(project: ProjectState, report) -> None:
+    """Let a Reviewer iterate on the whole report and its reasoning traces."""
+
+    artifact = initialize_revision(project)
+    if project.content_revision_artifact is None:
+        project = project.model_copy(update={"content_revision_artifact": artifact})
+        _save(project)
+
+    st.subheader("Content Revision · 报告修改与审阅会话")
+    st.caption(
+        "可直接修改报告，也可针对引用、行业分析、未来趋势及企业决策逻辑向AI提出疑问。"
+        "接受建议后会生成一个新版本；该过程可以反复进行。"
+    )
+    attention = reviewer_attention_points(project)
+    with st.expander("报告注意点（仅供审阅，不会进入正式报告）", expanded=bool(attention)):
+        if attention:
+            for item in attention:
+                st.write(f"- {item}")
+        else:
+            st.write("当前未发现需要额外提示的结构性审阅事项。")
+
+    draft_key = f"reviewer_report_draft_{project.project_id}_{artifact.active_version}"
+    edited = st.text_area(
+        "直接编辑完整报告",
+        value=report.markdown,
+        height=620,
+        key=draft_key,
+    )
+    direct_col, final_col = st.columns(2)
+    if direct_col.button(
+        "保存为新版本",
+        type="primary",
+        width="stretch",
+        key=f"reviewer_save_direct_{project.project_id}_{artifact.active_version}",
+    ):
+        try:
+            updated = save_report_version(
+                project,
+                edited,
+                source="direct_edit",
+                reviewer_note="Reviewer直接编辑",
+            )
+        except ReviewerRevisionError as exc:
+            st.error(str(exc))
+        else:
+            _save(updated)
+            st.rerun()
+    final_label = "重新开启修改" if artifact.finalized else "当前版本审阅完成"
+    if final_col.button(
+        final_label,
+        width="stretch",
+        key=f"reviewer_finalize_{project.project_id}_{artifact.finalized}",
+    ):
+        _save(finalize_revision(project, not artifact.finalized))
+        st.rerun()
+
+    st.markdown("### 向AI提出审阅意见或疑问")
+    target_options = [
+        RevisionTarget.REPORT,
+        RevisionTarget.REFERENCE_CHECK,
+        RevisionTarget.INDUSTRY_ANALYSIS,
+        RevisionTarget.FUTURE_INTELLIGENCE,
+    ]
+    if project.company_strategy_enabled:
+        target_options.extend([RevisionTarget.COMPANY_SCORECARD, RevisionTarget.ACTION_PLAN])
+    target_labels = {
+        RevisionTarget.REPORT: "完整报告",
+        RevisionTarget.REFERENCE_CHECK: "Reference Check",
+        RevisionTarget.INDUSTRY_ANALYSIS: "Industry Analysis",
+        RevisionTarget.FUTURE_INTELLIGENCE: "Future Intelligence",
+        RevisionTarget.COMPANY_SCORECARD: "Company Scorecard",
+        RevisionTarget.ACTION_PLAN: "Action Plan",
+    }
+    targets = st.multiselect(
+        "本轮审阅范围",
+        target_options,
+        default=[RevisionTarget.REPORT],
+        format_func=target_labels.get,
+        key=f"reviewer_targets_{project.project_id}_{len(artifact.turns)}",
+    )
+    message = st.text_area(
+        "审阅意见、疑问或希望调整的观点",
+        placeholder="例如：竞争格局需要增加国际玩家与国产头部公司的分层比较，并重新判断国产替代节奏。",
+        key=f"reviewer_message_{project.project_id}_{len(artifact.turns)}",
+    )
+    if st.button(
+        "让AI分析并提出新版本",
+        type="primary",
+        width="stretch",
+        key=f"reviewer_analyze_{project.project_id}_{len(artifact.turns)}",
+    ):
+        try:
+            with st.spinner("正在回到原始Prompt并分析本轮审阅意见…"):
+                revised = reviewer_revision_service().analyze(
+                    project,
+                    message,
+                    targets or [RevisionTarget.REPORT],
+                    direct_draft=edited,
+                )
+        except ReviewerRevisionError as exc:
+            st.error(str(exc))
+        else:
+            _save(project.model_copy(update={"content_revision_artifact": revised}))
+            st.rerun()
+
+    artifact = project.content_revision_artifact or artifact
+    if artifact.turns:
+        st.markdown("### 审阅会话")
+        for index, turn in enumerate(reversed(artifact.turns), start=1):
+            round_number = len(artifact.turns) - index + 1
+            with st.expander(
+                f"第{round_number}轮 · {'已采纳' if turn.accepted else '待确认'} · {turn.reviewer_message[:46]}",
+                expanded=index == 1,
+            ):
+                st.markdown("**AI对问题的分析**")
+                st.write(turn.assistant_analysis)
+                if turn.recommendations:
+                    st.markdown("**推荐观点**")
+                    for item in turn.recommendations:
+                        st.write(f"- {item}")
+                if turn.questions_for_reviewer:
+                    st.markdown("**需要Reviewer判断**")
+                    for item in turn.questions_for_reviewer:
+                        st.write(f"- {item}")
+                if turn.trace_amendments:
+                    st.markdown("**研究逻辑修订记录**")
+                    for target, amendment in turn.trace_amendments.items():
+                        st.write(f"- {target}：{amendment}")
+                st.markdown("**建议的新版本报告**")
+                st.markdown(turn.proposed_markdown)
+                if not turn.accepted and turn.turn_id == artifact.turns[-1].turn_id:
+                    accept_col, continue_col = st.columns(2)
+                    if accept_col.button(
+                        "接受建议并生成新版本",
+                        type="primary",
+                        width="stretch",
+                        key=f"accept_revision_{turn.turn_id}",
+                    ):
+                        updated = save_report_version(
+                            project,
+                            turn.proposed_markdown,
+                            source="ai_revision",
+                            reviewer_note=turn.reviewer_message,
+                            accept_latest_turn=True,
+                        )
+                        _save(updated)
+                        st.rerun()
+                    continue_col.caption("如不接受，继续在上方提出下一轮疑问或修改方向。")
+
+    if artifact.versions:
+        with st.expander("查看版本历史"):
+            for version in reversed(artifact.versions):
+                st.write(
+                    f"V{version.version} · {version.source} · "
+                    f"{version.created_at.strftime('%Y-%m-%d %H:%M')}"
+                )
+
+
 def _render_reviewer_workpapers(project: ProjectState) -> None:
     report = (
         project.enterprise_decision_report_artifact
@@ -1678,7 +1877,7 @@ def _render_reviewer_workpapers(project: ProjectState) -> None:
             _run_reviewer_report_pipeline(project)
         return
 
-    labels = ["完整报告", "Reference Check", "Industry Analysis", "Future Intelligence"]
+    labels = ["完整报告", "Content Revision", "Reference Check", "Industry Analysis", "Future Intelligence"]
     if project.company_strategy_enabled:
         labels.extend(["Company Scorecard", "Action Plan"])
     tabs = st.tabs(labels)
@@ -1686,16 +1885,24 @@ def _render_reviewer_workpapers(project: ProjectState) -> None:
         st.info("这是报告优先生成的审阅稿。其余页签用于追溯引用、分析方法和决策逻辑。")
         st.markdown(report.markdown)
         _render_reviewer_report_downloads(project, report.markdown, report.title)
+        if st.button(
+            "按最新SOP重新生成分析与报告",
+            width="stretch",
+            key=f"reviewer_regenerate_latest_{project.project_id}",
+        ):
+            _rerun_reviewer_analysis(project)
     with tabs[1]:
-        _render_reference_check(project)
+        _render_content_revision(project, report)
     with tabs[2]:
-        _render_analysis_trace(project)
+        _render_reference_check(project)
     with tabs[3]:
+        _render_analysis_trace(project)
+    with tabs[4]:
         _render_future_trace(project)
     if project.company_strategy_enabled:
-        with tabs[4]:
-            _render_scorecard_trace(project)
         with tabs[5]:
+            _render_scorecard_trace(project)
+        with tabs[6]:
             _render_action_plan_trace(project)
 
 

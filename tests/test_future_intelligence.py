@@ -285,6 +285,15 @@ class InvalidJsonThenValidModel(FakeModel):
         return self.response, ModelResponse(content="{}", model="fake")
 
 
+class TimeoutModel:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def complete_json(self, messages, *, enable_thinking=False):
+        self.calls += 1
+        raise ProviderError("Modelhub request timed out")
+
+
 def test_future_confidence_is_computed_by_system() -> None:
     project, evidence_artifact, analysis, evidence, finding = fixtures()
     service = FutureIntelligenceService(
@@ -458,6 +467,27 @@ def test_future_retries_one_invalid_json_response() -> None:
     assert len(future.scenarios) == 3
 
 
+def test_future_timeout_builds_a_grounded_recoverable_forecast() -> None:
+    project, evidence_artifact, analysis, evidence, finding = fixtures()
+    model = TimeoutModel()
+
+    future = FutureIntelligenceService(model, load_active_sop()).generate(
+        project, evidence_artifact, analysis
+    )
+
+    assert model.calls == 1
+    assert future.trends
+    assert {item.scenario_type.value for item in future.scenarios} == {
+        "baseline",
+        "accelerated",
+        "blocked",
+    }
+    assert evidence.evidence_id in future.input_evidence_ids
+    assert finding.finding_id in future.input_finding_ids
+    assert all(item.evidence_ids for item in future.trends)
+    assert all(item.finding_ids for item in future.trends)
+
+
 def test_future_rejects_unvalidated_probability_field() -> None:
     project, evidence_artifact, analysis, evidence, finding = fixtures()
     invalid = payload(evidence.evidence_id, finding.finding_id)
@@ -540,26 +570,21 @@ def test_general_report_is_composed_only_after_both_gates() -> None:
 
     report = generate_general_report(reviewed_project)
 
-    assert "本报告依据经人工确认的市场口径" in report.markdown
+    assert "本报告研究对象为" in report.markdown
+    assert "基于已接受证据" not in report.markdown
+    assert "证据缺口" not in report.markdown
     assert evidence.evidence_id not in report.markdown
     assert finding.finding_id not in report.markdown
     assert "对原始研究问题的回应" not in report.markdown
-    assert "## 1. 行业定义" in report.markdown
-    assert "## 2. 行业赛道与产业链" in report.markdown
-    assert "## 3. 市场及行业规模测算" in report.markdown
-    assert "## 4. 竞争格局" in report.markdown
-    assert "## 5. 市场驱动因素及 Future Outlook" in report.markdown
-    ordered_headings = [
-        "## 1. 行业定义",
-        "## 2. 行业赛道与产业链",
-        "## 3. 市场及行业规模测算",
-        "## 4. 竞争格局",
-        "## 5. 市场驱动因素及 Future Outlook",
-    ]
-    assert [report.markdown.index(item) for item in ordered_headings] == sorted(
-        report.markdown.index(item) for item in ordered_headings
+    assert "行业定义与研究边界" in report.markdown
+    assert "行业赛道与产业链" in report.markdown
+    assert "市场规模、结构与发展现状" in report.markdown
+    assert "竞争格局与主要市场参与者" in report.markdown
+    assert "市场驱动因素与未来展望" in report.markdown
+    assert report.markdown.index("市场驱动因素与未来展望") < report.markdown.index(
+        "行业定义与研究边界"
     )
-    assert "预测方法与适用边界" in report.markdown
+    assert "预测方法" in report.markdown
     assert "因果情景" in report.markdown
     assert report.source_count == 1
     assert "➡" not in report.markdown

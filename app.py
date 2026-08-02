@@ -52,7 +52,7 @@ st.set_page_config(
 
 
 RUNTIME_RELEASE_KEY = "industry_analyst_runtime_release"
-RUNTIME_RELEASE_ID = "dual-role-reviewer-report-first-v1"
+RUNTIME_RELEASE_ID = "reviewer-content-revision-v2"
 
 # Community Cloud updates the checkout without always restarting the Python
 # process. Refresh the modules changed by this release once per browser session
@@ -76,6 +76,7 @@ if (
     future_model_module = importlib.reload(
         importlib.import_module("src.models.future")
     )
+    importlib.reload(importlib.import_module("src.models.revision"))
     project_state_module = importlib.reload(
         importlib.import_module("src.state.project")
     )
@@ -117,6 +118,7 @@ if (
     reviewer_orchestration_module = importlib.reload(
         importlib.import_module("src.services.reviewer_orchestration")
     )
+    importlib.reload(importlib.import_module("src.services.reviewer_revision"))
     navigation = importlib.reload(navigation)
     future_module = importlib.import_module("src.services.future_intelligence")
     importlib.reload(future_module)

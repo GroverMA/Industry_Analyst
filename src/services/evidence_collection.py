@@ -734,34 +734,19 @@ def evidence_coverage_advisories(
             keyword in combined
             for keyword in ("量化", "规模", "份额", "增速", "贡献", "价格", "利润", "支付")
         ):
-            handling = (
-                "先以可比口径、区间或方向性证据形成定性判断；报告中不得虚构精确数字，"
-                "并把该项列为后续数据库、企业经营数据或专家访谈的补数任务。"
-            )
+            handling = "现有材料已经用于区间估算；请在Content Revision重点复核数值口径与估算强度。"
         elif any(keyword in combined for keyword in ("未来", "政策", "监管", "机会", "趋势")):
-            handling = (
-                "改用情景分析，明确关键假设、触发条件与监测指标；当前只输出条件性判断，"
-                "不输出无证据支持的单一路径预测。"
-            )
+            handling = "现有材料已经转化为条件性情景；请在Content Revision重点复核关键假设。"
         elif any(keyword in combined for keyword in ("竞争", "商业模式", "利润", "产业链")):
-            handling = (
-                "使用已披露代表性企业或可比案例形成样本判断，明确样本边界，"
-                "避免把个别公司的做法直接外推为整个市场结论。"
-            )
+            handling = "现有代表性企业和可比案例已经形成样本判断；请重点复核外推范围。"
         elif any(keyword in combined for keyword in ("口径", "归入", "分类", "边界")):
-            handling = (
-                "沿用Gate 0已确认的市场定义作为暂定口径，同时把争议项列为边界假设，"
-                "并在结论中说明采用其他口径时可能产生的变化。"
-            )
+            handling = "已按Gate 0确认口径形成结论；请重点复核争议边界是否符合审阅意图。"
         else:
-            handling = (
-                "以现有证据形成部分回答并降低结论置信度；在报告中保留证据缺口，"
-                "同时列出建议补充的官方数据、企业披露或专家访谈来源。"
-            )
+            handling = "现有材料已经进入审阅草稿；请在Content Revision重点复核结论强度与适用范围。"
         priority = (
-            "核心问题缺口"
+            "核心问题重点审阅"
             if any("用户必答问题" in item for item in details)
-            else "一般证据缺口"
+            else "一般重点审阅"
         )
         advisories.append(
             {

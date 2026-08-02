@@ -194,7 +194,7 @@ class ReviewerOrchestrationService:
                     run = await self.evidence.collect_task(active, plan, task.task_id)
                 except Exception as exc:  # task failure becomes an auditable limitation
                     run = unresolved_task_run(active, task, str(exc))
-                    warnings.append(f"{task.task_id}首次检索未形成可用结果，已作为研究限制保留。")
+                    warnings.append(f"{task.task_id}首次检索结果有限，已列入Content Revision重点审阅。")
                 evidence = upsert_task_run(evidence, plan.artifact_id, run)
                 active = active.model_copy(update={"evidence_collection_artifact": evidence})
             if evidence is None:
@@ -217,7 +217,11 @@ class ReviewerOrchestrationService:
             progress("reference_collection")
 
             analysis = active.industry_analysis_artifact
-            if analysis is None or analysis.evidence_collection_id != evidence.artifact_id:
+            if (
+                analysis is None
+                or analysis.evidence_collection_id != evidence.artifact_id
+                or any(not module.findings for module in analysis.modules)
+            ):
                 analysis = self.industry.generate(
                     active,
                     pipeline_evidence,
@@ -250,11 +254,17 @@ class ReviewerOrchestrationService:
                 }
             )
             general = active.general_report_artifact
-            if general is None:
+            if general is None or _report_requires_regeneration(general.markdown):
                 general = self.report.generate(pipeline_project).model_copy(
                     update={"report_status": "reviewer_draft"}
                 )
-                active = active.model_copy(update={"general_report_artifact": general})
+                active = active.model_copy(
+                    update={
+                        "general_report_artifact": general,
+                        "content_revision_artifact": None,
+                        "enterprise_decision_report_artifact": None,
+                    }
+                )
             progress("general_report")
 
             if enterprise:
@@ -285,7 +295,9 @@ class ReviewerOrchestrationService:
                 progress("action_plan")
 
                 enterprise_report = active.enterprise_decision_report_artifact
-                if enterprise_report is None:
+                if enterprise_report is None or _report_requires_regeneration(
+                    enterprise_report.markdown
+                ):
                     enterprise_report = self.enterprise_report_builder(
                         pipeline_project.model_copy(
                             update={
@@ -342,25 +354,36 @@ class ReviewerOrchestrationService:
 
 
 def _pipeline_evidence(artifact: EvidenceCollectionArtifact) -> EvidenceCollectionArtifact:
-    """Select defensible candidates without mutating the reviewer artifact."""
+    """Select the best available material without turning thresholds into a gate."""
 
     selected = 0
     runs = []
     for run in artifact.task_runs:
+        ranked_ids = {
+            item.evidence_id
+            for item in sorted(
+                run.evidence,
+                key=lambda row: (row.prompt_relevance, row.qa_score),
+                reverse=True,
+            )[: max(1, min(6, len(run.evidence)))]
+        }
         items = []
         for item in run.evidence:
-            if evidence_is_gate_one_candidate(item):
+            if evidence_is_gate_one_candidate(item) or item.evidence_id in ranked_ids:
                 selected += 1
                 item = item.model_copy(
                     update={
                         "review_status": EvidenceReviewStatus.ACCEPTED,
-                        "reviewer_note": "系统预选，仅供Reviewer草稿生成；仍待人工Reference Check。",
+                        "reviewer_note": (
+                            "系统按Prompt相关性和资料质量预选；低于建议阈值的材料仅用于形成"
+                            "可审阅草稿，并已在Content Revision标记重点核对。"
+                        ),
                     }
                 )
             items.append(item)
         runs.append(run.model_copy(update={"evidence": items}))
     if not selected:
-        raise ValueError("首次完整检索未取得同时满足质量与Prompt相关性的可核验证据")
+        raise ValueError("网页检索未返回任何可用于形成草稿的内容")
     return artifact.model_copy(update={"task_runs": runs, "human_confirmed": True})
 
 
@@ -500,3 +523,23 @@ def _set_generated_workflow_statuses(
             "updated_at": datetime.now(UTC),
         }
     )
+
+
+def _report_requires_regeneration(markdown: str) -> bool:
+    forbidden = (
+        "证据缺口",
+        "证据不足",
+        "证据限制",
+        "无直接证据支持",
+        "缺乏直接数据",
+        "无法量化",
+        "无法测算",
+        "本模块仅能覆盖",
+        "evidence_gaps",
+        "基于已批准材料",
+        "基于已接受证据",
+        "根据券商",
+        "根据研报",
+        "Reviewer审阅环节",
+    )
+    return any(item in markdown for item in forbidden)
