@@ -17,11 +17,12 @@ def get_project(state: MutableMapping[str, Any]) -> ProjectState | None:
     value = state.get(PROJECT_KEY)
     if value is None:
         return None
-    if isinstance(value, ProjectState):
-        return value
     # Streamlit hot-reload can leave an instance of the previous ProjectState
-    # class in session memory. Convert any Pydantic-like value back to plain
-    # data before validating it against the current class definition.
+    # class (or a current ProjectState containing an older nested model) in
+    # session memory. Always round-trip Pydantic-like values through plain
+    # data so fields introduced by a deployment receive their model defaults.
+    # Returning an ``isinstance(ProjectState)`` value unchanged is unsafe:
+    # one of its nested Pydantic objects may still have the old field layout.
     if hasattr(value, "model_dump"):
         value = value.model_dump(mode="json")
     project = ProjectState.model_validate(value)

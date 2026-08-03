@@ -5,7 +5,12 @@ from pydantic import ValidationError
 from src.models.analysis import IndustryAnalysisArtifact
 from src.models.evidence import EvidenceCollectionArtifact
 from src.models.future import FutureIntelligenceArtifact
-from src.models.research import ResearchBriefArtifact, ResearchPlanArtifact
+from src.models.research import (
+    MarketDefinition,
+    MethodologyTrace,
+    ResearchBriefArtifact,
+    ResearchPlanArtifact,
+)
 from src.state.project import ProjectState, ResearchMode, WorkflowStatus, WorkspaceMode
 from src.state.project import rewind_to_previous_review_gate
 from src.state.browser_history import (
@@ -139,6 +144,49 @@ def test_session_helpers_round_trip_project() -> None:
     assert get_project(state) == project
     clear_project(state)
     assert get_project(state) is None
+
+
+def test_session_migrates_legacy_nested_brief_missing_new_field() -> None:
+    brief = ResearchBriefArtifact(
+        decision_statement="研究中国IVD行业",
+        original_prompt="研究中国IVD行业",
+        market_definition=MarketDefinition(
+            core_market="中国IVD市场",
+            product_scope="体外诊断产品",
+            customer_scope="医疗机构",
+            geography_scope="中国",
+            value_chain_scope="上游至终端",
+            time_scope="2020-2036",
+            inclusions=["诊断试剂"],
+            exclusions=["治疗药物"],
+        ),
+        key_questions=["市场规模如何？"],
+        information_gaps=["统计口径待确认"],
+        hypotheses=["需求持续增长"],
+        clarification_questions=["历史期与预测期如何划分？"],
+        confidence_note="待核验",
+        methodology=MethodologyTrace(
+            sop_id="SOP-TEST",
+            sop_name="测试SOP",
+            sop_version="1.0",
+            sop_hash="test",
+            rule_ids=["R1"],
+        ),
+    )
+    # Simulate a nested model retained in Streamlit memory from the version
+    # before clarification_responses was introduced.
+    brief.__dict__.pop("clarification_responses")
+    legacy_project = make_project().model_copy(
+        update={"research_brief_artifact": brief}
+    )
+    state = {PROJECT_KEY: legacy_project}
+
+    restored = get_project(state)
+
+    assert restored is not None
+    assert restored.research_brief_artifact is not None
+    assert restored.research_brief_artifact.clarification_responses == {}
+    assert isinstance(state[PROJECT_KEY], dict)
 
 
 def test_browser_history_record_preserves_full_resumable_project() -> None:

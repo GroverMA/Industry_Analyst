@@ -296,6 +296,12 @@ def _render_gate_zero(project: ProjectState, *, reviewer_mode: bool = False) -> 
         st.caption("左侧为AI识别的待验证问题，右侧为研究者的对应确认口径。问题和回答均可修改。")
         ambiguity_questions = list(dict.fromkeys([*intent.ambiguities, *market.ambiguities]))
         ambiguity_questions = ambiguity_questions or [""]
+        # Projects kept alive across a Streamlit hot deployment may contain a
+        # pre-migration ResearchBrief instance. Gate 0 must remain renderable
+        # even if that legacy nested object lacks this newly introduced field.
+        saved_clarification_responses = (
+            getattr(brief, "clarification_responses", None) or {}
+        )
         ambiguity_rows: list[tuple[str, str]] = []
         for index, question in enumerate(ambiguity_questions, start=1):
             question_col, response_col = st.columns(2)
@@ -307,7 +313,7 @@ def _render_gate_zero(project: ProjectState, *, reviewer_mode: bool = False) -> 
             )
             edited_response = response_col.text_area(
                 f"研究者确认口径 {index}",
-                value=brief.clarification_responses.get(question, ""),
+                value=saved_clarification_responses.get(question, ""),
                 placeholder="请在此直接填写确认口径、取舍原则或需要采用的判断。",
                 key=f"studio_scope_response_{index}",
                 height=92,
