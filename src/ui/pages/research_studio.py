@@ -243,6 +243,7 @@ def _render_gate_zero(project: ProjectState, *, reviewer_mode: bool = False) -> 
     st.subheader("Gate 0 · 对齐AI对研究问题和市场口径的理解")
     st.caption(
         "AI已经根据你的原始Prompt生成市场描述。请修改任何不准确的定义；确认后的版本将成为检索、分析、趋势和报告的共同口径。"
+        "上方所有字段均可直接修改；待验证问题请在右侧填写你的确认口径或补充判断。"
     )
     with st.container(border=True):
         st.markdown("#### 用户原始Prompt")
@@ -291,9 +292,31 @@ def _render_gate_zero(project: ProjectState, *, reviewer_mode: bool = False) -> 
             "相邻但不属于核心市场的领域（每行一项）",
             value=_to_lines(market.adjacent_markets),
         )
-        ambiguities = st.text_area(
-            "仍需在研究中验证的口径问题（每行一项）",
-            value=_to_lines([*intent.ambiguities, *market.ambiguities]),
+        st.markdown("#### 仍需在研究中验证的口径问题")
+        st.caption("左侧为AI识别的待验证问题，右侧为研究者的对应确认口径。问题和回答均可修改。")
+        ambiguity_questions = list(dict.fromkeys([*intent.ambiguities, *market.ambiguities]))
+        ambiguity_questions = ambiguity_questions or [""]
+        ambiguity_rows: list[tuple[str, str]] = []
+        for index, question in enumerate(ambiguity_questions, start=1):
+            question_col, response_col = st.columns(2)
+            edited_question = question_col.text_area(
+                f"待验证问题 {index}",
+                value=question,
+                key=f"studio_scope_question_{index}",
+                height=92,
+            )
+            edited_response = response_col.text_area(
+                f"研究者确认口径 {index}",
+                value=brief.clarification_responses.get(question, ""),
+                placeholder="请在此直接填写确认口径、取舍原则或需要采用的判断。",
+                key=f"studio_scope_response_{index}",
+                height=92,
+            )
+            ambiguity_rows.append((edited_question.strip(), edited_response.strip()))
+        additional_ambiguities = st.text_area(
+            "新增待验证问题（可选，每行一项）",
+            value="",
+            help="如需增加问题，可在此填写；确认后将进入研究口径清单。",
         )
         confirmed = st.checkbox(
             "我已核对并确认上述市场定义、纳入排除范围和报告必答问题",
@@ -315,11 +338,19 @@ def _render_gate_zero(project: ProjectState, *, reviewer_mode: bool = False) -> 
         return
     now = datetime.now(UTC)
     intent_payload = intent.model_dump()
+    ambiguity_list = [question for question, _ in ambiguity_rows if question]
+    ambiguity_list.extend(_from_lines(additional_ambiguities))
+    ambiguity_list = list(dict.fromkeys(ambiguity_list))
+    clarification_responses = {
+        question: response
+        for question, response in ambiguity_rows
+        if question and response
+    }
     intent_payload.update(
         {
             "interpreted_objective": interpreted_objective,
             "must_answer_questions": _from_lines(must_answer),
-            "ambiguities": _from_lines(ambiguities),
+            "ambiguities": ambiguity_list,
         }
     )
     brief_payload = brief.model_dump()
@@ -341,8 +372,9 @@ def _render_gate_zero(project: ProjectState, *, reviewer_mode: bool = False) -> 
                 market_sizing_basis=market_sizing_basis,
                 competitor_definition=competitor_definition,
                 adjacent_markets=_from_lines(adjacent_markets),
-                ambiguities=_from_lines(ambiguities),
+                ambiguities=ambiguity_list,
             ),
+            "clarification_responses": clarification_responses,
             "human_confirmed": True,
             "confirmed_at": now,
         }
@@ -999,8 +1031,13 @@ def _render_gate_one(project: ProjectState, advanced: bool) -> None:
                 ),
                 key=f"studio_gap_user_input_{artifact.artifact_id}",
             ).strip()
+        st.markdown(
+            '<p style="color:#B42318;font-weight:800;margin-bottom:0.35rem;">'
+            '请勾选确认，才能进行下一步（必选）</p>',
+            unsafe_allow_html=True,
+        )
         gap_acknowledged = st.checkbox(
-            "我已阅读上述缺口及处理方式，并确认可以在这些证据边界下继续研究",
+            "我已阅读上述缺口及处理方式，并确认可以在这些证据边界下继续研究（必选）",
             key=f"studio_gap_acknowledged_{artifact.artifact_id}",
         )
         gap_resolution_ready = bool(
@@ -1094,8 +1131,13 @@ def _render_gate_one(project: ProjectState, advanced: bool) -> None:
                     for gap in run.information_gaps:
                         st.write(f"- 缺口：{gap}")
 
+        st.markdown(
+            '<p style="color:#B42318;font-weight:800;margin-bottom:0.35rem;">'
+            '请勾选确认，才能生成行业分析与趋势（必选）</p>',
+            unsafe_allow_html=True,
+        )
         truth_confirmed = st.checkbox(
-            "我已检查拟采用证据的来源、原文和适用范围，并确认其可用于本次研究",
+            "我已检查拟采用证据的来源、原文和适用范围，并确认其可用于本次研究（必选）",
             key="studio_gate_one_truth_confirmation",
         )
         if st.button(

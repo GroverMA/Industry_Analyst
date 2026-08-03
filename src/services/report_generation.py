@@ -860,13 +860,40 @@ def sanitize_formal_report(markdown: str) -> str:
 def _report_section_plan(project: ProjectState, narrative: dict[str, Any] | None) -> list[tuple[str, str]]:
     """Keep the SOP sequence fixed while letting the Prompt shape chapter names."""
 
+    objective = project.research_objective.strip()
+    scope_prefix = ""
+    if "全球" in objective and "中国" in objective:
+        scope_prefix = "全球及中国"
+    elif project.region.strip() and project.region.strip() not in {"全球", "Global", "global"}:
+        scope_prefix = project.region.strip()
+
+    future_match = re.search(r"未来\s*([一二三四五六七八九十百\d]+)\s*年", objective)
+    horizon_match = re.search(
+        r"((?:19|20)\d{2})\s*[-—–至]\s*((?:19|20)\d{2})",
+        project.time_horizon,
+    )
+    if future_match:
+        future_title = f"未来{future_match.group(1)}年市场趋势与发展展望"
+    elif horizon_match:
+        future_title = f"{horizon_match.group(1)}—{horizon_match.group(2)}年市场趋势与发展展望"
+    else:
+        future_title = "未来发展趋势与Future Outlook"
+
     defaults = {
         "industry_definition": "行业定义与研究边界",
         "market_value_chain": "行业赛道与产业链",
         "market_status": "市场规模、结构与发展现状",
-        "competitive_landscape": "竞争格局与主要市场参与者",
-        "drivers_constraints": "市场驱动因素与关键条件",
-        "future_outlook": "未来发展趋势与Future Outlook",
+        "competitive_landscape": (
+            f"{scope_prefix}市场竞争格局与主要参与者"
+            if scope_prefix and any(marker in objective for marker in ("竞争", "玩家", "可比"))
+            else "竞争格局与主要市场参与者"
+        ),
+        "drivers_constraints": (
+            "市场增长驱动因素、制约与关键条件"
+            if any(marker in objective for marker in ("驱动", "发展条件", "增长动力", "制约"))
+            else "市场驱动因素与关键条件"
+        ),
+        "future_outlook": future_title,
     }
     allowed = set(defaults)
     proposed = narrative.get("section_plan") if narrative else None
@@ -882,7 +909,22 @@ def _report_section_plan(project: ProjectState, narrative: dict[str, Any] | None
                 proposed_titles.setdefault("future_outlook", title or defaults["future_outlook"])
             elif key in allowed:
                 proposed_titles[key] = title or defaults[key]
-    return [(key, proposed_titles.get(key, title)) for key, title in defaults.items()]
+    generic_titles = {
+        "竞争格局与主要市场参与者",
+        "市场驱动因素与关键条件",
+        "未来发展趋势与Future Outlook",
+    }
+    return [
+        (
+            key,
+            (
+                title
+                if proposed_titles.get(key, "") in generic_titles and title != proposed_titles.get(key)
+                else proposed_titles.get(key, title)
+            ),
+        )
+        for key, title in defaults.items()
+    ]
 
 
 def _validate_narrative_payload(
@@ -1197,6 +1239,14 @@ def generate_general_report(
                 if item.review_status == AnalysisReviewStatus.ACCEPTED
             ]
             if not module_findings:
+                # Older saved projects and Reviewer drafts can contain a
+                # human-confirmed module summary while its individual rows were
+                # created before per-finding review statuses were introduced.
+                # Never emit a heading with an empty body: retain the traceable
+                # module conclusion and let Content Revision expose its caveats.
+                intro = module_paragraphs.get(module.module_id) or module.executive_summary
+                if intro:
+                    _append_paragraphs(lines, intro)
                 continue
             intro = module_paragraphs.get(module.module_id) or module.executive_summary
             _append_paragraphs(lines, intro)
@@ -1211,6 +1261,36 @@ def generate_general_report(
                 _append_paragraphs(lines, paragraph + citations)
                 subsection += 1
         return subsection
+
+    def render_evidence_backstop(
+        *,
+        keywords: tuple[str, ...],
+        opening: str,
+        max_items: int = 4,
+    ) -> None:
+        """Prevent a governed report chapter from being emitted without prose.
+
+        This is a report-assembly compatibility guard for older saved projects
+        and partially structured model responses.  The normal path remains the
+        SOP-governed analysis module; the backstop only reuses already accepted
+        evidence and therefore never invents a player, driver or market fact.
+        """
+
+        matched = [
+            item
+            for item in accepted_evidence
+            if any(
+                keyword.lower() in f"{item.statement} {item.source_excerpt}".lower()
+                for keyword in keywords
+            )
+        ][:max_items]
+        if not matched:
+            matched = accepted_evidence[: min(max_items, len(accepted_evidence))]
+        if not matched:
+            return
+        paragraph = _formal_paragraph(opening, *[item.statement for item in matched])
+        citations = source_markers([item.evidence_id for item in matched])
+        _append_paragraphs(lines, paragraph + citations)
     section_plan = _report_section_plan(project, narrative)
     market_size_observations = [
         _plain_report_prose(item.statement)
@@ -1249,9 +1329,35 @@ def generate_general_report(
                     _formal_paragraph("市场规模测算方面", *market_size_observations),
                 )
         elif section_key == "competitive_landscape":
+            before = len(lines)
             render_modules(("competitive_landscape",), section_number)
+            if len(lines) == before:
+                render_evidence_backstop(
+                    keywords=(
+                        "竞争", "市场份额", "市占率", "排名", "龙头", "企业",
+                        "罗氏", "雅培", "西门子", "迈瑞", "company", "competitor",
+                        "market share", "leader",
+                    ),
+                    opening=(
+                        "市场竞争格局应从目标业务、可比口径和实际市场参与关系出发，"
+                        "综合判断主要参与者、竞争层级与结构性差异"
+                    ),
+                )
         elif section_key == "drivers_constraints":
+            before = len(lines)
             render_modules(("drivers_constraints",), section_number)
+            if len(lines) == before:
+                render_evidence_backstop(
+                    keywords=(
+                        "驱动", "需求", "供给", "政策", "监管", "技术", "商业模式",
+                        "增长", "渗透率", "国产化", "集采", "老龄化", "demand",
+                        "supply", "policy", "technology", "growth",
+                    ),
+                    opening=(
+                        "市场发展由需求、供给、政策、技术、商业模式与竞争结构共同作用，"
+                        "各因素通过改变采用率、价格、渗透率、成本或产能影响市场结果"
+                    ),
+                )
 
     method = future.forecast_methodology
     method_labels = {

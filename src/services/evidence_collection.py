@@ -514,8 +514,40 @@ class EvidenceCollectionService:
             )
             for question in task.questions
         ]
+        task_context = " ".join(
+            [
+                task.title,
+                task.objective,
+                *task.questions,
+                *task.information_needs,
+                *task.search_queries,
+            ]
+        ).lower()
+        specialised: list[str] = []
+        if any(
+            marker in task_context
+            for marker in ("竞争", "可比", "玩家", "企业", "company", "competitor", "market share")
+        ):
+            specialised.extend(
+                [
+                    f"{project.region} {project.industry} 竞争格局 主要企业 市场份额 龙头",
+                    f"{project.region} {project.industry} 招股书 年报 主要市场参与者 竞争优势",
+                    f"{project.region} {project.industry} competitors companies market share annual report",
+                ]
+            )
+        if any(
+            marker in task_context
+            for marker in ("驱动", "发展条件", "增长动力", "制约", "driver", "constraint", "future")
+        ):
+            specialised.extend(
+                [
+                    f"{project.region} {project.industry} 市场驱动因素 需求 供给 政策 技术",
+                    f"{project.region} {project.industry} 商业模式 竞争格局 发展趋势 行业增长",
+                    f"{project.region} {project.industry} growth drivers demand supply policy technology",
+                ]
+            )
         return EvidenceCollectionService._unique(
-            [*task.search_queries, *generated]
+            [*specialised, *task.search_queries, *generated]
         )[:MAX_QUERIES_PER_TASK]
 
     @staticmethod

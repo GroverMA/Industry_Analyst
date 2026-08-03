@@ -34,6 +34,24 @@ EXPECTED_MODULES = (
 MAX_ACCEPTED_EVIDENCE = 60
 
 
+COMPETITION_SOP_DIRECTIVE = (
+    "先锁定目标业务、指标、年份、地区、单位和币种，再建立宽口径候选公司池并映射各公司的"
+    "实际目标业务。比较必须坚持同年、同地区、同细分业务、同指标、同单位和同币种；输出按"
+    "行业排名或份额、候选池排序、竞争梯队或玩家类型、并列公司事实的顺序降级。正式判断须"
+    "先给结论，再说明比较口径、玩家或梯队事实、结构差异及其行业含义；只要现有资料含有玩家、"
+    "业务、份额、收入、产品或渠道事实，就不得生成空白竞争章节。"
+)
+
+
+DRIVERS_SOP_DIRECTIVE = (
+    "必须从需求、供给、政策、技术、商业模式和竞争格局六个方向扫描影响因素，并把同一因果链"
+    "上的重复信号合并。每项因素应形成‘事实变化—客户或系统要求—方案与采用变化—直接变量—"
+    "市场规模或盈利指标—持续验证指标’的闭环，同时记录正反作用、供需反馈、短中长期方向、"
+    "置信度与敏感假设。优先形成三至五项可直接进入报告的核心因素；资料有限时降低结论强度，"
+    "不得留下空白驱动因素章节。"
+)
+
+
 class StructuredModel(Protocol):
     def complete_json(
         self,
@@ -243,6 +261,12 @@ class IndustryAnalysisService:
         ]
         if not module_evidence:
             module_evidence = evidence_payload
+        elif module_id in {"competitive_landscape", "drivers_constraints"}:
+            module_evidence = self._augment_cross_task_evidence(
+                module_id,
+                module_evidence,
+                evidence_payload,
+            )
 
         titles = {
             "market_value_chain": "市场定义、行业赛道与价值链",
@@ -278,15 +302,12 @@ class IndustryAnalysisService:
                 "估计与区间，并在内部底稿记录敏感变量，不得在正式报告写成无法测算。"
             ),
             "competitive_landscape": (
-                "先建立候选公司池与已知遗漏，再映射目标业务；坚持同年、同地区、同细分业务、"
-                "同指标、同单位和同币种。每个主体必须填写relationship_type与comparison_basis。"
-                "证据不足时按行业份额、候选池排序、竞争梯队、并列事实、无法比较的顺序降级，"
-                "有限样本不得称行业Top5或Top10。"
+                COMPETITION_SOP_DIRECTIVE
+                + "每个主体必须填写relationship_type与comparison_basis；有限样本不得称行业Top5或Top10。"
             ),
             "drivers_constraints": (
-                "按机制区分driver、constraint、enabling_condition、mixed或conditional，"
-                "并填写impact_direction。每项仅保留一条核心趋势，因果链须覆盖事实变化、客户或"
-                "系统要求、方案局限（如适用）、采用变化、直接变量、最终指标和验证指标。"
+                DRIVERS_SOP_DIRECTIVE
+                + "按机制区分driver、constraint、enabling_condition、mixed或conditional，并填写impact_direction。"
                 "comparison_dimensions还须记录factor_class、temporal_role、positive_effect、"
                 "negative_effect、supply_demand_feedback、market_size_score、profitability_score、"
                 "short_medium_long_direction、confidence_1_to_5和sensitive_assumptions。"
@@ -370,6 +391,38 @@ class IndustryAnalysisService:
         )
 
     @staticmethod
+    def _augment_cross_task_evidence(
+        module_id: str,
+        module_evidence: list[dict[str, Any]],
+        all_evidence: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Reuse relevant accepted evidence across tasks for cross-cutting modules."""
+
+        keywords = {
+            "competitive_landscape": (
+                "竞争", "企业", "公司", "玩家", "龙头", "市场份额", "市占", "产品线",
+                "渠道", "罗氏", "雅培", "西门子", "丹纳赫", "迈瑞", "万孚", "安图",
+            ),
+            "drivers_constraints": (
+                "需求", "供给", "政策", "集采", "监管", "技术", "创新", "增长", "驱动",
+                "价格", "成本", "渠道", "商业模式", "国产", "替代", "老龄化", "渗透率",
+            ),
+        }[module_id]
+        existing = {item["evidence_id"] for item in module_evidence}
+
+        def relevance(item: dict[str, Any]) -> tuple[int, float, float]:
+            text = f"{item.get('statement', '')} {item.get('supporting_excerpt', '')}".lower()
+            return (
+                sum(keyword.lower() in text for keyword in keywords),
+                float(item.get("prompt_relevance", 0)),
+                float(item.get("qa_score", 0)),
+            )
+
+        extras = [item for item in all_evidence if item["evidence_id"] not in existing]
+        extras = [item for item in sorted(extras, key=relevance, reverse=True) if relevance(item)[0] > 0]
+        return [*module_evidence, *extras[:12]]
+
+    @staticmethod
     def _fallback_module(
         module_id: str,
         title: str,
@@ -404,52 +457,75 @@ class IndustryAnalysisService:
         ranked = sorted(module_evidence, key=score, reverse=True)
         if not ranked:
             raise IndustryAnalysisError(f"{title}没有任何可追溯网页材料")
-        item = ranked[0]
-        dimensions: dict[str, str] = {}
-        factor_role = None
-        impact_direction = None
-        if module_id == "market_value_chain":
-            dimensions["value_chain_position"] = "依据网页材料识别的行业环节或赛道位置"
-        elif module_id == "competitive_landscape":
-            dimensions.update(
+        selected_count = 4 if module_id in {"competitive_landscape", "drivers_constraints"} else 2
+        selected = ranked[:selected_count]
+        findings: list[dict[str, Any]] = []
+        for item in selected:
+            dimensions: dict[str, str] = {}
+            factor_role = None
+            impact_direction = None
+            statement = str(item.get("statement") or item.get("supporting_excerpt") or "").strip()
+            if module_id == "market_value_chain":
+                dimensions["value_chain_position"] = "依据网页材料识别的行业环节或赛道位置"
+            elif module_id == "competitive_landscape":
+                dimensions.update(
+                    {
+                        "relationship_type": "直接竞争、替代竞争或可比参与者",
+                        "comparison_basis": "同一目标市场中的产品、技术、客户、渠道、份额或业务活动",
+                    }
+                )
+            elif module_id == "drivers_constraints":
+                negative_markers = ("下降", "降价", "制约", "风险", "压力", "减少", "放缓", "集采")
+                factor_role = (
+                    FactorRole.CONSTRAINT.value
+                    if any(marker in statement for marker in negative_markers)
+                    else FactorRole.DRIVER.value
+                )
+                impact_direction = (
+                    ImpactDirection.NEGATIVE.value
+                    if factor_role == FactorRole.CONSTRAINT.value
+                    else ImpactDirection.POSITIVE.value
+                )
+                dimensions.update(
+                    {
+                        "factor_class": "需求、供给、政策、技术、商业模式或竞争结构",
+                        "temporal_role": "当前变化及其延续影响",
+                        "positive_effect": "促进需求释放、供给改善、采用扩大或单位价值提升",
+                        "negative_effect": "可能带来价格、成本、准入、替代或盈利压力",
+                        "supply_demand_feedback": "供给能力、价格与需求采用之间形成动态反馈",
+                        "market_size_score": "待结合影响范围与持续时间判断",
+                        "profitability_score": "待结合价格、成本和竞争反应判断",
+                        "short_medium_long_direction": "短期验证、中期扩散、长期结构化影响",
+                        "confidence_1_to_5": "3",
+                        "sensitive_assumptions": "政策执行、技术商业化、价格变化与客户采用速度",
+                    }
+                )
+            findings.append(
                 {
-                    "relationship_type": "直接或相邻竞争参与者",
-                    "comparison_basis": "目标行业、地区与业务活动的公开描述",
+                    "subject": statement[:48] or title,
+                    "finding_type": AnalysisFindingType.ANALYST_INFERENCE.value,
+                    "statement": statement,
+                    "mechanism": (
+                        f"该可核验观察通过改变{project.region}{project.industry}的需求、供给、竞争或"
+                        "单位经济性，形成可进入报告的行业判断；具体影响方向由其作用对象和边界条件限定。"
+                    ),
+                    "evidence_ids": [item["evidence_id"]],
+                    "counter_evidence_ids": [],
+                    "comparison_dimensions": dimensions,
+                    "factor_role": factor_role,
+                    "impact_direction": impact_direction,
+                    "confidence": max(0.45, min(0.72, float(item.get("qa_score", 50)) / 100)),
+                    "scope": f"{project.region} · {project.industry}",
+                    "uncertainty": "公开资料的样本覆盖与整体市场之间仍需控制外推强度",
+                    "boundary_condition": "若后续资料显示市场口径、时间或业务范围不同，应调整该判断",
                 }
             )
-        elif module_id == "drivers_constraints":
-            factor_role = FactorRole.CONDITIONAL.value
-            impact_direction = ImpactDirection.UNCERTAIN.value
-            dimensions.update(
-                {
-                    "factor_class": "structural",
-                    "temporal_role": "current_condition",
-                }
-            )
-        statement = str(item.get("statement") or item.get("supporting_excerpt") or "").strip()
-        finding = {
-            "subject": title,
-            "finding_type": AnalysisFindingType.ANALYST_INFERENCE.value,
-            "statement": statement,
-            "mechanism": (
-                f"该网页观察与{project.region}{project.industry}的{title}直接相关，可作为本轮"
-                "行业判断的基础；其外推范围将在内容修订环节单独核对。"
-            ),
-            "evidence_ids": [item["evidence_id"]],
-            "counter_evidence_ids": [],
-            "comparison_dimensions": dimensions,
-            "factor_role": factor_role,
-            "impact_direction": impact_direction,
-            "confidence": max(0.45, min(0.7, float(item.get("qa_score", 50)) / 100)),
-            "scope": f"{project.region} · {project.industry}",
-            "uncertainty": "代表性样本与整体市场之间仍需审阅者判断外推强度",
-            "boundary_condition": "若后续资料显示市场口径、时间或业务范围不同，应调整该判断",
-        }
+        summary = "；".join(item["statement"] for item in findings[:3])
         return {
             "module_id": module_id,
             "title": title,
-            "executive_summary": statement,
-            "findings": [finding],
+            "executive_summary": summary,
+            "findings": findings,
             "evidence_gaps": [f"本模块由结构修复回退生成，需审阅者重点核对：{last_error}"],
             "rejected_questions": [],
         }
@@ -840,6 +916,11 @@ def analysis_gate_reasons(artifact: IndustryAnalysisArtifact | None) -> list[str
         ]
         if pending:
             reasons.append(f"{module.title}仍有{len(pending)}项判断待审核")
+        if not any(
+            item.review_status == AnalysisReviewStatus.ACCEPTED
+            for item in module.findings
+        ):
+            reasons.append(f"{module.title}尚无进入报告的已接受判断")
         if not module.findings and not module.evidence_gaps:
             reasons.append(f"{module.title}既无判断也无证据缺口记录")
     pending_company = [

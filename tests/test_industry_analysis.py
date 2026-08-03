@@ -242,6 +242,48 @@ def test_analysis_human_review_controls_gate() -> None:
     assert analysis_gate_reasons(analysis) == []
 
 
+def test_competition_and_driver_modules_reuse_relevant_cross_task_evidence() -> None:
+    module_specific = [
+        {
+            "evidence_id": "EVD-scope",
+            "task_id": "T-SCOPE",
+            "statement": "行业定义覆盖临床应用。",
+            "supporting_excerpt": "行业定义覆盖临床应用。",
+            "prompt_relevance": 0.8,
+            "qa_score": 88,
+        }
+    ]
+    all_evidence = [
+        *module_specific,
+        {
+            "evidence_id": "EVD-player",
+            "task_id": "T-OTHER",
+            "statement": "罗氏、雅培和西门子是主要企业，市场竞争集中于产品线和渠道。",
+            "supporting_excerpt": "主要企业围绕产品线和渠道竞争。",
+            "prompt_relevance": 0.9,
+            "qa_score": 92,
+        },
+        {
+            "evidence_id": "EVD-driver",
+            "task_id": "T-OTHER",
+            "statement": "集采政策、国产替代和老龄化需求共同影响行业增长与价格。",
+            "supporting_excerpt": "政策和需求共同影响行业。",
+            "prompt_relevance": 0.9,
+            "qa_score": 91,
+        },
+    ]
+
+    competition = IndustryAnalysisService._augment_cross_task_evidence(
+        "competitive_landscape", module_specific, all_evidence
+    )
+    drivers = IndustryAnalysisService._augment_cross_task_evidence(
+        "drivers_constraints", module_specific, all_evidence
+    )
+
+    assert any(item["evidence_id"] == "EVD-player" for item in competition)
+    assert any(item["evidence_id"] == "EVD-driver" for item in drivers)
+
+
 def test_factor_role_accepts_semantic_user_facing_label() -> None:
     artifact, accepted_id, _ = evidence_artifact()
     generated = valid_payload(accepted_id)

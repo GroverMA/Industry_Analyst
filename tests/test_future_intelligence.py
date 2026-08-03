@@ -583,14 +583,14 @@ def test_general_report_is_composed_only_after_both_gates() -> None:
     assert "市场规模、结构与发展现状" in report.markdown
     assert "竞争格局与主要市场参与者" in report.markdown
     assert "市场驱动因素与关键条件" in report.markdown
-    assert "未来发展趋势与Future Outlook" in report.markdown
+    assert "2026—2030年市场趋势与发展展望" in report.markdown
     ordered_sections = [
         "行业定义与研究边界",
         "行业赛道与产业链",
         "市场规模、结构与发展现状",
         "竞争格局与主要市场参与者",
         "市场驱动因素与关键条件",
-        "未来发展趋势与Future Outlook",
+        "2026—2030年市场趋势与发展展望",
     ]
     assert [report.markdown.index(title) for title in ordered_sections] == sorted(
         report.markdown.index(title) for title in ordered_sections
@@ -605,6 +605,45 @@ def test_general_report_is_composed_only_after_both_gates() -> None:
     assert "➡" not in report.markdown
     assert "👉" not in report.markdown
     assert not any(line.startswith("- ") for line in report.markdown.splitlines())
+
+
+def test_prompt_dynamically_names_competition_and_ten_year_outlook_sections() -> None:
+    project, evidence_artifact, analysis, evidence, finding = fixtures()
+    project = project.model_copy(
+        update={
+            "region": "全球及中国",
+            "research_objective": "研究全球及中国IVD市场现状、未来十年发展趋势以及竞争格局",
+            "time_horizon": "2026-2036",
+        }
+    )
+    future = FutureIntelligenceService(
+        FakeModel(payload(evidence.evidence_id, finding.finding_id)),
+        load_active_sop(),
+    ).generate(project, evidence_artifact, analysis)
+    for item in [*future.trends, *future.scenarios]:
+        item_id = item.trend_id if hasattr(item, "trend_id") else item.scenario_id
+        future = review_forecast_item(
+            future, item_id, ForecastReviewStatus.ACCEPTED, "Gate 2"
+        )
+    future = future.model_copy(update={"human_confirmed": True})
+    report = generate_general_report(
+        project.model_copy(
+            update={
+                "evidence_collection_artifact": evidence_artifact,
+                "industry_analysis_artifact": analysis,
+                "future_intelligence_artifact": future,
+            }
+        )
+    )
+
+    assert "全球及中国市场竞争格局与主要参与者" in report.markdown
+    assert "未来十年市场趋势与发展展望" in report.markdown
+    competition_body = report.markdown.split("全球及中国市场竞争格局与主要参与者", 1)[1]
+    competition_body = competition_body.split("市场驱动因素与关键条件", 1)[0]
+    assert "summary" in competition_body
+    drivers_body = report.markdown.split("市场驱动因素与关键条件", 1)[1]
+    drivers_body = drivers_body.split("未来十年市场趋势与发展展望", 1)[0]
+    assert "summary" in drivers_body
 
 
 def test_report_semantically_checks_original_prompt_coverage() -> None:

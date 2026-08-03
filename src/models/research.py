@@ -74,6 +74,7 @@ class ResearchBriefArtifact(BaseModel):
     information_gaps: list[str] = Field(min_length=1)
     hypotheses: list[str] = Field(min_length=1)
     clarification_questions: list[str] = Field(default_factory=list)
+    clarification_responses: dict[str, str] = Field(default_factory=dict)
     confidence_note: str
     methodology: MethodologyTrace
     generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
