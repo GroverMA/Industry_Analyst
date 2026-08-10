@@ -19,6 +19,7 @@ from src.services.enterprise_sensing import (
     EnterpriseSensingError,
     company_strategy_gate_reasons,
     confirm_enterprise_artifact,
+    diagnosis_title_from_symptoms,
     enterprise_item_from_upload,
     load_redacted_demo_enterprise_pack,
     new_enterprise_artifact,
@@ -150,17 +151,13 @@ def render(project: ProjectState | None) -> None:
 
     st.subheader("A. 企业自我诊断问题")
     st.caption(
-        "请提交企业认为实现战略意图时最需要改进或验证的方面。系统会把这些内容视为管理假设，"
+        "请提交企业在实现战略意图过程中已经观察到的表现、症状或问题。系统会把这些内容视为管理假设，"
         "并在后续行业分析、Company Scorecard和Action Plan中结合证据进行验证，而不会直接当作事实。"
     )
     with st.form("enterprise_self_diagnosis", border=True):
-        diagnosis_area = st.text_input(
-            "最需要改进或验证的方面",
-            placeholder="例如：重点医院客户渗透率偏低，现有渠道无法支持高端产品进入",
-        )
         current_symptoms = st.text_area(
             "当前表现、症状或已观察到的问题",
-            placeholder="描述目前发生了什么、影响了哪些客户或业务环节；公开演示只填写脱敏或模拟内容。",
+            placeholder="例如：重点医院客户渗透率偏低，现有渠道暂时无法支持高端产品进入。公开演示只填写脱敏或模拟内容。",
             height=120,
         )
         strategic_relevance = st.text_area(
@@ -197,7 +194,7 @@ def render(project: ProjectState | None) -> None:
             )
             try:
                 item = EnterpriseEvidenceItem(
-                    title=diagnosis_area,
+                    title=diagnosis_title_from_symptoms(current_symptoms),
                     category=EnterpriseEvidenceCategory.SELF_DIAGNOSIS,
                     statement_type=EnterpriseStatementType.HYPOTHESIS,
                     content=content,
@@ -209,7 +206,7 @@ def render(project: ProjectState | None) -> None:
                 )
                 artifact = upsert_enterprise_entry(artifact, project, item)
             except ValidationError:
-                st.error("请填写改进方面、当前表现、提交部门／责任人及其与战略意图的关系。")
+                st.error("请填写当前表现、提交部门／责任人及其与战略意图的关系。")
             else:
                 _save_artifact(project, artifact)
                 st.rerun()
@@ -217,7 +214,7 @@ def render(project: ProjectState | None) -> None:
     st.subheader("B. 分层上传脱敏企业文件")
     st.caption(
         "可一次上传同一数据层面的多个文件，并可重复新增不同批次，例如Sell-in、Sell-out、客户渗透率、"
-        "库存、价格与毛利。支持DOCX、XLSX、PPTX、PDF、TXT、Markdown和CSV；单文件不超过5MB。"
+        "库存、价格与毛利。支持DOCX、XLSX、PPTX、PDF、TXT、Markdown和CSV；单文件不超过300MB。"
     )
     with st.form("enterprise_file_entry", border=True):
         uploaded_files = st.file_uploader(

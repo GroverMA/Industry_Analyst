@@ -14,9 +14,11 @@ from src.models.enterprise import (
     EnterpriseStatementType,
 )
 from src.services.enterprise_sensing import (
+    MAX_UPLOAD_BYTES,
     EnterpriseSensingError,
     company_strategy_gate_reasons,
     confirm_enterprise_artifact,
+    diagnosis_title_from_symptoms,
     enterprise_item_from_upload,
     extract_document_text,
     new_enterprise_artifact,
@@ -160,6 +162,33 @@ def test_text_and_csv_uploads_are_extracted_without_model_calls() -> None:
     assert item.review_status == EnterpriseReviewStatus.NEEDS_REVIEW
 
 
+def test_enterprise_upload_limit_is_300_mb() -> None:
+    assert MAX_UPLOAD_BYTES == 300 * 1024 * 1024
+
+
+def test_diagnosis_title_is_derived_from_current_symptoms() -> None:
+    symptoms = "重点医院客户渗透率偏低。\n现有渠道转化效率未达到计划。"
+
+    assert diagnosis_title_from_symptoms(symptoms) == (
+        "重点医院客户渗透率偏低。 现有渠道转化效率未达到计划。"
+    )
+    assert diagnosis_title_from_symptoms("   ") == ""
+
+
+def test_oversized_enterprise_upload_is_rejected(monkeypatch) -> None:
+    monkeypatch.setattr("src.services.enterprise_sensing.MAX_UPLOAD_BYTES", 4)
+
+    with pytest.raises(EnterpriseSensingError, match="300MB"):
+        enterprise_item_from_upload(
+            file_name="orders.csv",
+            mime_type="text/csv",
+            data=b"12345",
+            source_owner="Commercial operations",
+            strategic_relevance="Tests channel performance",
+            sensitivity=EnterpriseSensitivity.REDACTED_DEMO,
+        )
+
+
 def test_powerpoint_upload_is_extracted_without_model_calls() -> None:
     presentation = Presentation()
     slide = presentation.slides.add_slide(presentation.slide_layouts[1])
@@ -192,3 +221,7 @@ def test_enterprise_sensing_page_renders_for_case_project() -> None:
         "C. 人工审核企业资料",
         "D. 权限确认与战略路径资格",
     ]
+    labels = [item.label for item in app.text_area]
+    assert "当前表现、症状或已观察到的问题" in labels
+    assert not any(item.label == "最需要改进或验证的方面" for item in app.text_input)
+    assert any("单文件不超过300MB" in item.value for item in app.caption)

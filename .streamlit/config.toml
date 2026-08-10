@@ -12,3 +12,4 @@ gatherUsageStats = false
 [server]
 headless = true
 runOnSave = true
+maxUploadSize = 300

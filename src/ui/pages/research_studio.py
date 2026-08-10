@@ -46,6 +46,7 @@ from src.services.industry_analysis import (
 )
 from src.services.enterprise_sensing import (
     company_strategy_gate_reasons,
+    diagnosis_title_from_symptoms,
     upsert_enterprise_entry,
 )
 from src.services.company_assessment import company_scorecard_eligibility
@@ -657,19 +658,22 @@ def _render_advanced_context(project: ProjectState) -> None:
     )
     with st.expander("快速提交一个企业自我诊断问题", expanded=False):
         st.caption(
-            "提交企业认为最需要改进或验证的方面；系统将其作为待验证管理假设。"
+            "提交企业已经观察到的表现、症状或问题；系统将其作为待验证管理假设。"
             "多层企业文件、敏感级别和逐条审核请进入完整Enterprise Sensing。"
         )
         with st.form("studio_enterprise_quick_entry", border=True):
-            observation_title = st.text_input("最需要改进或验证的方面", placeholder="例如：重点客户渗透率低于预期")
-            observation_content = st.text_area("当前表现或症状", height=110)
+            observation_content = st.text_area(
+                "当前表现、症状或已观察到的问题",
+                placeholder="例如：重点客户渗透率低于预期，现有渠道触达与转化效率偏低。",
+                height=110,
+            )
             observation_owner = st.text_input("提交部门／责任人", placeholder="例如：商业运营负责人")
             observation_relevance = st.text_area("为什么会影响企业战略意图", height=80)
             add_observation = st.form_submit_button("提交诊断假设", width="stretch")
         if add_observation:
             try:
                 item = EnterpriseEvidenceItem(
-                    title=observation_title,
+                    title=diagnosis_title_from_symptoms(observation_content),
                     category=EnterpriseEvidenceCategory.SELF_DIAGNOSIS,
                     statement_type=EnterpriseStatementType.HYPOTHESIS,
                     content=observation_content,
@@ -679,7 +683,7 @@ def _render_advanced_context(project: ProjectState) -> None:
                     input_method="self_diagnosis",
                 )
             except ValidationError:
-                st.error("请填写标题、内容、来源角色和战略相关性。")
+                st.error("请填写当前表现、来源角色和战略相关性。")
             else:
                 updated_artifact = upsert_enterprise_entry(artifact, project, item)
                 statuses = _reset_strategy_statuses(

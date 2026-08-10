@@ -19,12 +19,23 @@ from src.models.enterprise import (
 from src.state.project import ProjectState
 
 
-MAX_UPLOAD_BYTES = 5 * 1024 * 1024
+MAX_UPLOAD_BYTES = 300 * 1024 * 1024
 MAX_EXTRACTED_CHARACTERS = 50_000
 
 
 class EnterpriseSensingError(ValueError):
     pass
+
+
+def diagnosis_title_from_symptoms(symptoms: str, *, max_length: int = 48) -> str:
+    """Create a concise internal label without asking for duplicate input."""
+
+    normalized = " ".join(symptoms.split())
+    if not normalized:
+        return ""
+    if len(normalized) <= max_length:
+        return normalized
+    return normalized[: max_length - 1].rstrip("，,。；;：: ") + "…"
 
 
 def new_enterprise_artifact(project: ProjectState) -> EnterpriseSensingArtifact:
@@ -246,7 +257,7 @@ def enterprise_item_from_upload(
     if not data:
         raise EnterpriseSensingError("上传文件为空")
     if len(data) > MAX_UPLOAD_BYTES:
-        raise EnterpriseSensingError("单个文件不能超过5MB")
+        raise EnterpriseSensingError("单个文件不能超过300MB")
     text = extract_document_text(file_name, mime_type, data)
     if not text.strip():
         raise EnterpriseSensingError("文件未提取到可用文字")

@@ -60,7 +60,7 @@ Each input records:
 
 Statement types distinguish facts, observations, viewpoints, hypotheses,
 strategic intent, and mixed documents. Files support TXT, Markdown, CSV, PDF,
-DOCX, and XLSX with a 5 MB limit and a 50,000-character extraction limit.
+DOCX, and XLSX with a 300 MB per-file upload limit and a 50,000-character extraction limit.
 
 ## 5. Public-demo safety boundary
 
