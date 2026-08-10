@@ -296,6 +296,21 @@ class TimeoutModel:
         raise ProviderError("Modelhub request timed out")
 
 
+class EmptyTrendsModel:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def complete_json(self, messages, *, enable_thinking=False):
+        self.calls += 1
+        return {
+            "forecast_mode": "general",
+            "trends": [],
+            "scenarios": [],
+            "monitoring_priorities": [],
+            "forecast_gaps": [],
+        }, ModelResponse(content='{"trends": []}', model="fake")
+
+
 def test_future_confidence_is_computed_by_system() -> None:
     project, evidence_artifact, analysis, evidence, finding = fixtures()
     service = FutureIntelligenceService(
@@ -488,6 +503,52 @@ def test_future_timeout_builds_a_grounded_recoverable_forecast() -> None:
     assert finding.finding_id in future.input_finding_ids
     assert all(item.evidence_ids for item in future.trends)
     assert all(item.finding_ids for item in future.trends)
+
+
+def test_build_path_recovers_when_model_returns_empty_trends() -> None:
+    project, evidence_artifact, analysis, evidence, finding = fixtures()
+    model = EmptyTrendsModel()
+
+    future = FutureIntelligenceService(model, load_active_sop()).generate(
+        project,
+        evidence_artifact,
+        analysis,
+    )
+
+    assert model.calls == 2
+    assert future.trends
+    assert evidence.evidence_id in future.input_evidence_ids
+    assert finding.finding_id in future.input_finding_ids
+    assert {item.scenario_type.value for item in future.scenarios} == {
+        "baseline",
+        "accelerated",
+        "blocked",
+    }
+
+
+def test_review_path_with_enterprise_context_recovers_from_empty_trends() -> None:
+    project, evidence_artifact, analysis, evidence, finding = fixtures()
+    project = project.model_copy(
+        update={
+            "target_company": "Example Diagnostics",
+            "company_strategy_enabled": True,
+            "company_strategy_objective": "提升医院覆盖并优化渠道政策",
+        }
+    )
+    model = EmptyTrendsModel()
+
+    future = FutureIntelligenceService(model, load_active_sop()).generate(
+        project,
+        evidence_artifact,
+        analysis,
+        allow_pending_findings=True,
+    )
+
+    assert model.calls == 2
+    assert future.trends
+    assert future.trends[0].company_exposure is None
+    assert evidence.evidence_id in future.input_evidence_ids
+    assert finding.finding_id in future.input_finding_ids
 
 
 def test_future_rejects_unvalidated_probability_field() -> None:

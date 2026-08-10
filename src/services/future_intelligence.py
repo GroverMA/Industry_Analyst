@@ -320,6 +320,7 @@ class FutureIntelligenceService:
             raise FutureIntelligenceError("趋势预测缺少可传递到预测环节的证据或行业判断")
         last_error: Exception | None = None
         provider_failure = False
+        last_payload: dict[str, Any] | None = None
         for attempt in range(2):
             try:
                 # The governed prompt already contains the complete causal and
@@ -345,6 +346,7 @@ class FutureIntelligenceService:
             # stale or fabricated nested citation IDs.  Work on a copy because
             # retrying against a test/provider response must not mutate its cache.
             payload = deepcopy(self._unwrap(payload))
+            last_payload = payload
             try:
                 payload["forecast_mode"] = "general"
                 self._normalize_trend_categories(payload)
@@ -383,6 +385,22 @@ class FutureIntelligenceService:
                         ),
                     ]
                 )
+        if not provider_failure and self._is_empty_trend_response(last_payload):
+            # A syntactically valid response with an empty trend list is still a
+            # generation failure, not evidence that the industry has no future
+            # dynamics.  This is especially common after enterprise context
+            # increases prompt length.  Recover from the already-grounded
+            # Evidence Matrix and Industry Findings so both build-first and
+            # report-first paths can continue without inventing citations.
+            return self._build_recoverable_forecast(
+                project=project,
+                evidence_artifact=evidence_artifact,
+                analysis_artifact=analysis_artifact,
+                selected_evidence=selected_evidence,
+                selected_findings=selected_findings,
+                selected_module_ids=selected_module_ids,
+                failure=last_error,
+            )
         if not provider_failure:
             raise FutureIntelligenceError(f"Future Intelligence未通过校验：{last_error}")
         return self._build_recoverable_forecast(
@@ -615,6 +633,21 @@ class FutureIntelligenceService:
     def _unwrap(payload: dict[str, Any]) -> dict[str, Any]:
         nested = payload.get("future_intelligence")
         return nested if isinstance(nested, dict) else payload
+
+    @staticmethod
+    def _is_empty_trend_response(payload: dict[str, Any] | None) -> bool:
+        """Return true only for an otherwise parseable response with no trends.
+
+        Unsupported citations and malformed populated trends must still fail the
+        evidence gates.  The recovery path is deliberately limited to missing or
+        empty trend collections, where the governed evidence-linked fallback can
+        safely produce a reviewable draft.
+        """
+
+        if not isinstance(payload, dict):
+            return False
+        trends = payload.get("trends")
+        return trends is None or trends == []
 
     @staticmethod
     def _normalize_trend_categories(payload: dict[str, Any]) -> None:
