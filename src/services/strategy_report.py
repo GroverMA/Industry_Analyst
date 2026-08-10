@@ -222,16 +222,16 @@ def generate_enterprise_decision_report(project: ProjectState) -> EnterpriseDeci
         "",
         "## 8. 公司能力评分",
         "",
-        "| 评估维度 | 得分 | 权重 | 置信度 | 数据完整度 | 对标对象 |",
-        "|---|---:|---:|---:|---:|---|",
+        "| 评估维度 | 得分 | 公司当前市场位置 | 战略目标状态 | 核心差距 |",
+        "|---|---:|---|---|---|",
     ]
     benchmark_names = {item.benchmark_id: item.name for item in scorecard.benchmarks}
     for item in accepted_dimensions:
         benchmark = "、".join(benchmark_names.get(value, value) for value in item.benchmark_ids)
         score = f"{item.score:.1f}" if item.score is not None else "未评分"
         lines.append(
-            f"| {item.title} | {score} | {item.weight:.0%} | {item.confidence}% | "
-            f"{item.data_completeness}% | {benchmark or '未指定'} |"
+            f"| {item.title} | {score} | {item.current_market_position} | "
+            f"{item.target_position} | {item.strategic_gap} |"
         )
     lines.extend(
         [

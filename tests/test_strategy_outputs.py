@@ -317,6 +317,10 @@ def scorecard_payload(evidence_id: str, enterprise_id: str) -> dict:
                 "strengths": ["现有渠道"],
                 "gaps": ["方案销售"],
                 "risks": ["资源分散"],
+                "industry_relevance": "工作流解决方案正在成为行业竞争的重要维度。",
+                "current_market_position": "企业具备医院渠道基础，但方案销售与交付能力仍有限。",
+                "target_position": "形成可复制的工作流解决方案销售与交付能力。",
+                "strategic_gap": "现有单产品销售能力与目标方案化能力之间仍有差距。",
                 "strategic_fit_explanation": "与进入工作流解决方案市场的目标直接相关。",
                 "uncertainty": "企业样本有限",
             }
@@ -403,6 +407,39 @@ def test_missing_company_evidence_makes_dimension_unscored_not_neutral() -> None
     assert artifact.weighted_score == 80.0
 
 
+def test_scorecard_prunes_unknown_citations_and_preserves_strategy_gap() -> None:
+    project, evidence_id, enterprise_id, trend_id, _ = eligible_project()
+    payload = scorecard_payload(evidence_id, enterprise_id)
+    payload["benchmarks"][0]["evidence_ids"].append("EVD-stale-or-hallucinated")
+    for dimension in payload["dimensions"]:
+        dimension["external_evidence_ids"].append("EVD-stale-or-hallucinated")
+        dimension["enterprise_evidence_ids"].append("ENT-stale-or-hallucinated")
+        dimension["linked_trend_ids"] = [trend_id, "TRD-stale-or-hallucinated"]
+
+    artifact = CompanyAssessmentService(FakeModel(payload), load_active_sop()).generate(project)
+
+    assert artifact.weighted_score == 80.0
+    assert artifact.benchmarks[0].evidence_ids == [evidence_id]
+    assert all(item.external_evidence_ids == [evidence_id] for item in artifact.dimensions)
+    assert all(item.enterprise_evidence_ids == [enterprise_id] for item in artifact.dimensions)
+    assert all(item.linked_trend_ids == [trend_id] for item in artifact.dimensions)
+    assert all(item.current_market_position for item in artifact.dimensions)
+    assert all(item.target_position == "形成可复制的工作流解决方案销售与交付能力。" for item in artifact.dimensions)
+    assert all(item.strategic_gap for item in artifact.dimensions)
+
+
+def test_scorecard_recovers_when_all_model_benchmark_ids_are_unknown() -> None:
+    project, evidence_id, enterprise_id, _, _ = eligible_project()
+    payload = scorecard_payload(evidence_id, enterprise_id)
+    payload["benchmarks"][0]["evidence_ids"] = ["EVD-unknown"]
+
+    artifact = CompanyAssessmentService(FakeModel(payload), load_active_sop()).generate(project)
+
+    assert artifact.weighted_score == 80.0
+    assert artifact.benchmarks[0].name == "战略目标能力阈值"
+    assert artifact.benchmarks[0].evidence_ids == [evidence_id]
+
+
 def test_scorecard_and_action_plan_require_human_review() -> None:
     project, evidence_id, enterprise_id, trend_id, scenario_id = eligible_project()
     scorecard = CompanyAssessmentService(
@@ -433,6 +470,9 @@ def test_scorecard_and_action_plan_require_human_review() -> None:
     project = project.model_copy(update={"action_plan_artifact": action_plan})
     report = generate_enterprise_decision_report(project)
     assert "公司能力评分" in report.markdown
+    assert "公司当前市场位置" in report.markdown
+    assert "战略目标状态" in report.markdown
+    assert "现有单产品销售能力与目标方案化能力之间仍有差距" in report.markdown
     assert "停止、调整或转向" in report.markdown
     enterprise_sections = [
         "企业战略意图与决策框架",
@@ -449,7 +489,7 @@ def test_scorecard_and_action_plan_require_human_review() -> None:
     assert evidence_id not in report.markdown
 
 
-def test_action_plan_rejects_unknown_trace_ids() -> None:
+def test_action_plan_prunes_unknown_trace_ids_and_keeps_pipeline_running() -> None:
     project, evidence_id, enterprise_id, trend_id, scenario_id = eligible_project()
     scorecard = CompanyAssessmentService(
         FakeModel(scorecard_payload(evidence_id, enterprise_id)), load_active_sop()
@@ -460,8 +500,12 @@ def test_action_plan_rejects_unknown_trace_ids() -> None:
     payload = action_payload(evidence_id, enterprise_id, trend_id, scenario_id)
     payload["actions"][0]["evidence_ids"] = ["EVD-unknown"]
 
-    with pytest.raises(ActionPlanningError, match="未通过校验"):
-        ActionPlanningService(FakeModel(payload), load_active_sop()).generate(project)
+    artifact = ActionPlanningService(FakeModel(payload), load_active_sop()).generate(project)
+
+    assert artifact.actions[0].evidence_ids == [evidence_id]
+    assert artifact.actions[0].score_dimension_ids == ["market_position"]
+    assert artifact.actions[0].enterprise_evidence_ids == [enterprise_id]
+    assert artifact.actions[0].trend_ids == [trend_id]
 
 
 def test_project_snapshot_round_trips_strategy_artifacts() -> None:

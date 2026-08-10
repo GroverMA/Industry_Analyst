@@ -1742,6 +1742,9 @@ def _render_scorecard_trace(project: ProjectState) -> None:
                 "置信度": item.confidence,
                 "主要优势": "；".join(item.strengths),
                 "关键差距": "；".join(item.gaps),
+                "当前市场位置": item.current_market_position,
+                "战略目标状态": item.target_position,
+                "战略差距": item.strategic_gap,
             }
             for item in scorecard.dimensions
         ],

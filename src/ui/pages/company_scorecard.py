@@ -58,7 +58,7 @@ def render(project: ProjectState | None) -> None:
         st.markdown("#### 评分对象与战略锚点")
         st.write(f"**目标企业：** {project.target_company}")
         st.write(f"**战略意图：** {project.company_strategy_objective}")
-        st.caption("行业吸引力不等于企业竞争力；六个维度分别检查企业能力、Benchmark位置、战略适配与未来准备度。")
+        st.caption("行业吸引力不等于企业竞争力；评分从行业关键趋势出发，判断公司当前市场位置、战略目标状态及两者之间的差距。")
 
     reasons = company_scorecard_eligibility(project)
     if reasons:
@@ -139,6 +139,10 @@ def render(project: ProjectState | None) -> None:
             else:
                 st.warning(item.unscored_reason or "资料不足，系统未评分")
             st.write("**评分理由：** " + item.score_rationale)
+            st.write("**行业趋势与维度意义：** " + item.industry_relevance)
+            st.write("**公司当前市场位置：** " + item.current_market_position)
+            st.write("**战略目标状态：** " + item.target_position)
+            st.write("**当前—目标差距：** " + item.strategic_gap)
             st.write("**战略适配解释：** " + item.strategic_fit_explanation)
             st.write("**Benchmark：** " + "、".join(benchmark_names.get(value, value) for value in item.benchmark_ids))
             st.write("**优势：** " + ("；".join(item.strengths) or "未识别"))

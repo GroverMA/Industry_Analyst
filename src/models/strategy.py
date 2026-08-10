@@ -51,6 +51,11 @@ class CompanyScoreDimension(BaseModel):
     strengths: list[str] = Field(default_factory=list)
     gaps: list[str] = Field(default_factory=list)
     risks: list[str] = Field(default_factory=list)
+    industry_relevance: str = ""
+    current_market_position: str = ""
+    target_position: str = ""
+    strategic_gap: str = ""
+    linked_trend_ids: list[str] = Field(default_factory=list)
     strategic_fit_explanation: str
     data_completeness: int = Field(ge=0, le=100)
     confidence: int = Field(ge=0, le=100)
