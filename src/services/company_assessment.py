@@ -37,6 +37,24 @@ DIMENSIONS: dict[str, tuple[str, float]] = {
 }
 
 
+BENCHMARK_SCORES = {
+    "direct_peer": 70.0,
+    "strategic_threshold": 80.0,
+    "best_in_class": 90.0,
+}
+
+
+def _market_position_label(company_score: float, benchmark_score: float) -> str:
+    delta = company_score - benchmark_score
+    if delta >= 10:
+        return "领先市场基准"
+    if delta >= -5:
+        return "达到或接近市场基准"
+    if delta >= -20:
+        return "处于市场追赶位置"
+    return "明显落后于市场基准"
+
+
 class StructuredModel(Protocol):
     def complete_json(
         self,
@@ -454,6 +472,17 @@ class CompanyAssessmentService:
             ]
             if not benchmark_ids and external_ids:
                 benchmark_ids = [benchmarks[0].benchmark_id]
+            selected_benchmarks = [
+                item for item in benchmarks if item.benchmark_id in benchmark_ids
+            ]
+            benchmark_score = (
+                max(
+                    BENCHMARK_SCORES.get(item.benchmark_type.value, 80.0)
+                    for item in selected_benchmarks
+                )
+                if selected_benchmarks
+                else None
+            )
             components_payload = raw.get("score_components")
             score_components = None
             score = None
@@ -476,6 +505,16 @@ class CompanyAssessmentService:
             completeness = min(100, min(len(external_ids), 2) * 25 + min(len(enterprise_ids), 2) * 25)
             evidence_quality = mean(qa_map[item] for item in external_ids) if external_ids else 0
             confidence = round(0.6 * evidence_quality + 0.4 * completeness)
+            benchmark_gap = (
+                round(benchmark_score - score, 1)
+                if benchmark_score is not None and score is not None
+                else None
+            )
+            position_label = (
+                _market_position_label(score, benchmark_score)
+                if benchmark_score is not None and score is not None
+                else "资料不足，暂不判断市场位置"
+            )
             dimensions.append(
                 CompanyScoreDimension(
                     dimension_id=dimension_id,
@@ -483,6 +522,9 @@ class CompanyAssessmentService:
                     weight=weight,
                     score_components=score_components,
                     score=score,
+                    benchmark_score=benchmark_score,
+                    benchmark_gap=benchmark_gap,
+                    market_position_label=position_label,
                     score_rationale=str(raw.get("score_rationale") or unscored_reason),
                     benchmark_ids=benchmark_ids,
                     external_evidence_ids=external_ids,
@@ -525,6 +567,21 @@ class CompanyAssessmentService:
             if scored_weight >= 0.5
             else None
         )
+        weighted_benchmark_score = (
+            round(
+                sum(item.benchmark_score * item.weight for item in scored if item.benchmark_score is not None)
+                / scored_weight,
+                1,
+            )
+            if scored_weight >= 0.5
+            and all(item.benchmark_score is not None for item in scored)
+            else None
+        )
+        weighted_gap = (
+            round(weighted_benchmark_score - weighted_score, 1)
+            if weighted_benchmark_score is not None and weighted_score is not None
+            else None
+        )
         return CompanyScorecardArtifact(
             project_id=project.project_id,
             target_company_snapshot=project.target_company or "",
@@ -535,6 +592,8 @@ class CompanyAssessmentService:
             benchmarks=benchmarks,
             dimensions=dimensions,
             weighted_score=weighted_score,
+            weighted_benchmark_score=weighted_benchmark_score,
+            weighted_gap=weighted_gap,
             scored_weight=scored_weight,
             overall_assessment=str(payload.get("overall_assessment") or "证据化公司评分已生成"),
             strategic_advantages=list(payload.get("strategic_advantages") or []),

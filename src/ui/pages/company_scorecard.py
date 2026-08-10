@@ -18,6 +18,7 @@ from src.state.project import ProjectState, WorkflowStatus
 from src.state.session import queue_page_navigation, set_project
 from src.ui.agent_services import company_assessment_service
 from src.ui.components import badge, page_header, render_methodology_trace, require_project
+from src.ui.scorecard_visuals import render_bullet_points, render_scorecard_radar
 
 
 def _save(project: ProjectState, artifact, *, status: WorkflowStatus) -> None:
@@ -97,11 +98,29 @@ def render(project: ProjectState | None) -> None:
         return
 
     st.subheader("评分总览")
-    cols = st.columns(3)
+    cols = st.columns(4)
     cols[0].metric("综合得分", f"{artifact.weighted_score:.1f}" if artifact.weighted_score is not None else "未计算")
-    cols[1].metric("有证据评分覆盖", f"{artifact.scored_weight:.0%}")
-    cols[2].metric("已审核维度", f"{sum(item.review_status != StrategyReviewStatus.NEEDS_REVIEW for item in artifact.dimensions)}/6")
+    weighted_benchmark_score = getattr(artifact, "weighted_benchmark_score", None)
+    weighted_gap = getattr(artifact, "weighted_gap", None)
+    cols[1].metric(
+        "市场基准分",
+        f"{weighted_benchmark_score:.1f}"
+        if weighted_benchmark_score is not None
+        else "未计算",
+    )
+    cols[2].metric(
+        "基准差距",
+        f"{weighted_gap:+.1f}"
+        if weighted_gap is not None
+        else "未计算",
+        help="正值表示公司得分低于市场基准，负值表示公司得分高于市场基准。",
+    )
+    cols[3].metric("有证据评分覆盖", f"{artifact.scored_weight:.0%}")
     st.write(artifact.overall_assessment)
+
+    st.markdown("#### 公司—市场基准能力雷达图")
+    st.caption("市场基准由经批准的直接同业、最佳实践或战略能力阈值转换为统一的0—100分口径。")
+    render_scorecard_radar(artifact, key=f"scorecard_radar_{artifact.artifact_id}")
 
     with st.expander("Benchmark定义与依据", expanded=True):
         for item in artifact.benchmarks:
@@ -139,15 +158,27 @@ def render(project: ProjectState | None) -> None:
             else:
                 st.warning(item.unscored_reason or "资料不足，系统未评分")
             st.write("**评分理由：** " + item.score_rationale)
+            benchmark_score = getattr(item, "benchmark_score", None)
+            benchmark_gap = getattr(item, "benchmark_gap", None)
+            benchmark_label = f"{benchmark_score:.1f}/100" if benchmark_score is not None else "未计算"
+            gap_label = f"{benchmark_gap:+.1f}" if benchmark_gap is not None else "未计算"
+            st.write(f"**市场基准分：** {benchmark_label} · **基准差距：** {gap_label}")
+            st.write(
+                "**市场位置判断：** "
+                + (getattr(item, "market_position_label", "") or "暂未判断")
+            )
             st.write("**行业趋势与维度意义：** " + item.industry_relevance)
             st.write("**公司当前市场位置：** " + item.current_market_position)
             st.write("**战略目标状态：** " + item.target_position)
             st.write("**当前—目标差距：** " + item.strategic_gap)
             st.write("**战略适配解释：** " + item.strategic_fit_explanation)
             st.write("**Benchmark：** " + "、".join(benchmark_names.get(value, value) for value in item.benchmark_ids))
-            st.write("**优势：** " + ("；".join(item.strengths) or "未识别"))
-            st.write("**差距：** " + ("；".join(item.gaps) or "未识别"))
-            st.write("**风险：** " + ("；".join(item.risks) or "未识别"))
+            st.markdown("**优势**")
+            render_bullet_points(item.strengths)
+            st.markdown("**差距**")
+            render_bullet_points(item.gaps)
+            st.markdown("**风险**")
+            render_bullet_points(item.risks)
             st.caption(
                 "Public Evidence: " + ("、".join(item.external_evidence_ids) or "无")
                 + " · Enterprise Evidence: " + ("、".join(item.enterprise_evidence_ids) or "无")

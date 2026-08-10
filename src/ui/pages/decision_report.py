@@ -20,6 +20,7 @@ from src.state.project import ProjectState, WorkflowStatus
 from src.state.session import queue_page_navigation, set_project
 from src.ui.components import page_header, require_project
 from src.ui.report_preview import render_report_preview
+from src.ui.scorecard_visuals import render_scorecard_radar
 
 
 def _safe_name(value: str) -> str:
@@ -145,6 +146,9 @@ def render(project: ProjectState | None) -> None:
         return
 
     st.success("企业决策报告已生成；内部追溯关系保留在审核工作台，不进入正式交付正文。")
+    st.markdown("### 公司得分与市场基准")
+    st.caption("雷达图将公司能力与统一口径的市场基准并列呈现；正式下载报告同步提供逐维度对比表。")
+    render_scorecard_radar(scorecard, key=f"decision_scorecard_radar_{project.project_id}")
     report_style = render_report_preview(
         enterprise_report.markdown,
         key=f"decision_enterprise_{project.project_id}",

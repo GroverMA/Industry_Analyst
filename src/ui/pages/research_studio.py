@@ -87,6 +87,7 @@ from src.ui.agent_services import (
 )
 from src.ui.components import badge, information_card, page_header, require_project
 from src.ui.report_preview import render_report_preview
+from src.ui.scorecard_visuals import render_scorecard_radar
 
 
 MODE_LABELS = {
@@ -1728,16 +1729,33 @@ def _render_scorecard_trace(project: ProjectState) -> None:
     if scorecard is None:
         st.info("尚未形成 Company Scorecard。")
         return
-    st.metric(
+    score_cols = st.columns(3)
+    score_cols[0].metric(
         "企业综合评分",
         f"{scorecard.weighted_score:.1f}" if scorecard.weighted_score is not None else "资料不足",
     )
+    weighted_benchmark_score = getattr(scorecard, "weighted_benchmark_score", None)
+    weighted_gap = getattr(scorecard, "weighted_gap", None)
+    score_cols[1].metric(
+        "市场基准分",
+        f"{weighted_benchmark_score:.1f}"
+        if weighted_benchmark_score is not None
+        else "资料不足",
+    )
+    score_cols[2].metric(
+        "基准差距",
+        f"{weighted_gap:+.1f}" if weighted_gap is not None else "资料不足",
+    )
     st.write(scorecard.overall_assessment)
+    render_scorecard_radar(scorecard, key=f"review_scorecard_radar_{scorecard.artifact_id}")
     st.dataframe(
         [
             {
                 "评估维度": item.title,
                 "得分": item.score,
+                "市场基准分": getattr(item, "benchmark_score", None),
+                "基准差距": getattr(item, "benchmark_gap", None),
+                "市场位置": getattr(item, "market_position_label", ""),
                 "权重": f"{item.weight:.0%}",
                 "置信度": item.confidence,
                 "主要优势": "；".join(item.strengths),
@@ -1962,6 +1980,12 @@ def _render_reviewer_workpapers(project: ProjectState) -> None:
     tabs = st.tabs(labels)
     with tabs[0]:
         st.info("这是报告优先生成的审阅稿。其余页签用于追溯引用、分析方法和决策逻辑。")
+        if project.company_strategy_enabled and project.company_scorecard_artifact is not None:
+            st.markdown("### 公司得分与市场基准")
+            render_scorecard_radar(
+                project.company_scorecard_artifact,
+                key=f"reviewer_report_radar_{project.project_id}",
+            )
         report_style = render_report_preview(
             report.markdown,
             key=f"reviewer_{project.project_id}",

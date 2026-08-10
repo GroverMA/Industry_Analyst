@@ -423,8 +423,13 @@ def test_score_is_calculated_and_not_accepted_from_model() -> None:
     artifact = CompanyAssessmentService(FakeModel(payload), load_active_sop()).generate(project)
 
     assert artifact.weighted_score == 80.0
+    assert artifact.weighted_benchmark_score == 80.0
+    assert artifact.weighted_gap == 0.0
     assert artifact.scored_weight == 1.0
     assert all(item.score == 80.0 for item in artifact.dimensions)
+    assert all(item.benchmark_score == 80.0 for item in artifact.dimensions)
+    assert all(item.benchmark_gap == 0.0 for item in artifact.dimensions)
+    assert all(item.market_position_label == "达到或接近市场基准" for item in artifact.dimensions)
     assert all(item.confidence > 0 for item in artifact.dimensions)
 
 
@@ -504,10 +509,17 @@ def test_scorecard_and_action_plan_require_human_review() -> None:
     project = project.model_copy(update={"action_plan_artifact": action_plan})
     report = generate_enterprise_decision_report(project)
     assert "公司能力评分" in report.markdown
+    assert "市场基准分" in report.markdown
+    assert "基准差距" in report.markdown
+    assert "达到或接近市场基准" in report.markdown
     assert "公司当前市场位置" in report.markdown
     assert "战略目标状态" in report.markdown
     assert "现有单产品销售能力与目标方案化能力之间仍有差距" in report.markdown
     assert "停止、调整或转向" in report.markdown
+    assert re.search(r"### \d+\.\d+ 战略优势\n\n- 渠道基础。", report.markdown)
+    assert re.search(r"### \d+\.\d+ 关键差距\n\n- 方案交付能力。", report.markdown)
+    assert re.search(r"### \d+\.\d+ 推进顺序\n\n- 先验证需求，再扩张投入。", report.markdown)
+    assert "- 立即全面扩张：当前信息基础尚不支持。" in report.markdown
     enterprise_sections = [
         "企业战略意图与决策框架",
         "公司能力评分",
