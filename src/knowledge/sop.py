@@ -17,6 +17,8 @@ DEFAULT_SOP_PATH = (
     / "trident_industry_research_v2.json"
 )
 
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+
 
 class SOPRule(BaseModel):
     rule_id: str
@@ -99,5 +101,20 @@ def load_sop_pack(path: Path) -> ResearchSOPPack:
 
 def load_active_sop() -> ResearchSOPPack:
     configured = os.getenv("RESEARCH_SOP_PACK_PATH")
-    path = Path(configured).expanduser() if configured else DEFAULT_SOP_PATH
-    return load_sop_pack(path)
+    if not configured:
+        return load_sop_pack(DEFAULT_SOP_PATH)
+
+    configured_path = Path(configured).expanduser()
+    candidates = [configured_path]
+    if not configured_path.is_absolute():
+        candidates.append(REPOSITORY_ROOT / configured_path)
+
+    for candidate in candidates:
+        if candidate.is_file():
+            return load_sop_pack(candidate)
+
+    # Streamlit secrets may retain a path from an earlier SOP filename after
+    # a knowledge-pack migration.  A stale optional override must never make
+    # the entire research workflow unavailable when the bundled, versioned
+    # production pack is present.
+    return load_sop_pack(DEFAULT_SOP_PATH)

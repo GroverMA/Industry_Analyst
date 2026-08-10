@@ -115,7 +115,8 @@ class FakeStructuredModel:
         return self.responses.pop(0), ModelResponse(content="{}", model="fake")
 
 
-def test_active_sop_is_locked_and_fingerprinted() -> None:
+def test_active_sop_is_locked_and_fingerprinted(monkeypatch) -> None:
+    monkeypatch.delenv("RESEARCH_SOP_PACK_PATH", raising=False)
     sop = load_active_sop()
 
     assert sop.locked is True
@@ -124,6 +125,21 @@ def test_active_sop_is_locked_and_fingerprinted() -> None:
     assert sop.version == "2.0.0"
     assert "SUL-DEFINE-001" in sop.rule_ids
     assert "SUL-SIZE-003" in sop.rule_ids
+
+
+def test_active_sop_falls_back_when_deployment_override_is_stale(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv(
+        "RESEARCH_SOP_PACK_PATH",
+        "/mount/src/industry_analyst/knowledge_packs/research_sop/retired-pack.json",
+    )
+
+    sop = load_active_sop()
+
+    assert sop.sop_id == "trident_industry_research"
+    assert sop.version == "2.0.0"
+    assert sop.content_hash
 
 
 def test_service_generates_traceable_brief_and_plan() -> None:
