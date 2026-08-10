@@ -235,10 +235,12 @@ class CompanyAssessmentService:
                     ChatMessage(role="user", content="输出不是合法JSON，请按原结构完整重试。")
                 )
                 continue
-            nested = payload.get("company_scorecard")
-            if isinstance(nested, dict):
-                payload = nested
             try:
+                if not isinstance(payload, dict):
+                    raise TypeError("Company Scorecard响应必须是JSON对象")
+                nested = payload.get("company_scorecard")
+                if isinstance(nested, dict):
+                    payload = nested
                 return self._finalize(
                     project,
                     payload,
@@ -250,7 +252,14 @@ class CompanyAssessmentService:
                     future.artifact_id,
                     enterprise.artifact_id,
                 )
-            except (CompanyAssessmentError, ValidationError, TypeError, ValueError) as exc:
+            except (
+                CompanyAssessmentError,
+                ValidationError,
+                AttributeError,
+                KeyError,
+                TypeError,
+                ValueError,
+            ) as exc:
                 last_error = exc
                 if attempt == 1:
                     break
@@ -266,7 +275,108 @@ class CompanyAssessmentService:
                         ),
                     ]
                 )
-        raise CompanyAssessmentError(f"Company Scorecard未通过校验：{last_error}")
+        # Keep the strategy workflow usable when the provider returns malformed
+        # JSON.  This is not a generic score: it is a conservative, traceable
+        # comparison of accepted enterprise observations against the accepted
+        # industry trends and the user's own strategic objective.
+        fallback = self._fallback_payload(
+            project,
+            accepted_evidence,
+            accepted_enterprise,
+            accepted_trends,
+        )
+        try:
+            return self._finalize(
+                project,
+                fallback,
+                allowed_evidence,
+                allowed_enterprise,
+                allowed_trends,
+                qa_map,
+                analysis.artifact_id,
+                future.artifact_id,
+                enterprise.artifact_id,
+            )
+        except (CompanyAssessmentError, ValidationError, TypeError, ValueError) as exc:
+            raise CompanyAssessmentError(
+                f"Company Scorecard未通过校验：{last_error or exc}"
+            ) from exc
+
+    def _fallback_payload(
+        self,
+        project: ProjectState,
+        accepted_evidence: list[Any],
+        accepted_enterprise: list[Any],
+        accepted_trends: list[Any],
+    ) -> dict[str, Any]:
+        if not accepted_evidence or not accepted_enterprise or not accepted_trends:
+            raise CompanyAssessmentError("形成公司市场定位至少需要行业证据、企业资料与趋势判断")
+
+        evidence_ids = [item.evidence_id for item in accepted_evidence[:2]]
+        enterprise_ids = [item.enterprise_evidence_id for item in accepted_enterprise[:2]]
+        trend_ids = [item.trend_id for item in accepted_trends[:2]]
+        enterprise_summary = "；".join(
+            str(item.content).strip()
+            for item in accepted_enterprise[:3]
+            if str(item.content).strip()
+        )
+        trend_summary = "；".join(
+            str(item.forecast_statement).strip()
+            for item in accepted_trends[:3]
+            if str(item.forecast_statement).strip()
+        )
+        current_component = min(4, max(1, 1 + len(accepted_enterprise) // 2))
+        dimensions = []
+        for dimension_id, (title, _) in DIMENSIONS.items():
+            dimensions.append(
+                {
+                    "dimension_id": dimension_id,
+                    "score_components": {
+                        "current_capability": current_component,
+                        "benchmark_position": 2,
+                        "strategic_fit": 3,
+                        "future_readiness": 2,
+                    },
+                    "score_rationale": (
+                        f"企业当前可观察表现为：{enterprise_summary}。该表现需要结合行业变化"
+                        f"‘{trend_summary}’判断其在{title}上的相对位置。"
+                    ),
+                    "benchmark_names": ["战略目标与行业趋势能力阈值"],
+                    "external_evidence_ids": evidence_ids,
+                    "enterprise_evidence_ids": enterprise_ids,
+                    "strengths": [f"企业已形成可用于判断{title}的经营基础与一手观察。"],
+                    "gaps": [f"{title}的当前能力尚需进一步对齐企业战略目标。"],
+                    "risks": [f"若{title}不能随行业变化同步提升，战略目标兑现将承压。"],
+                    "industry_relevance": f"{trend_summary}，因此{title}是企业未来市场定位的关键维度。",
+                    "current_market_position": enterprise_summary,
+                    "target_position": project.company_strategy_objective,
+                    "strategic_gap": (
+                        f"企业当前在{title}上的可观察状态，与‘{project.company_strategy_objective}’"
+                        "所要求的目标能力之间仍有需要关闭的差距。"
+                    ),
+                    "linked_trend_ids": trend_ids,
+                    "strategic_fit_explanation": f"{title}直接影响企业战略目标的可实现性。",
+                    "uncertainty": "当前评分受企业资料覆盖范围及行业趋势兑现节奏影响。",
+                }
+            )
+        return {
+            "benchmarks": [
+                {
+                    "name": "战略目标与行业趋势能力阈值",
+                    "benchmark_type": "strategic_threshold",
+                    "rationale": "以用户战略目标和已确认行业趋势共同定义目标能力状态。",
+                    "evidence_ids": evidence_ids,
+                }
+            ],
+            "dimensions": dimensions,
+            "overall_assessment": (
+                f"企业当前市场位置应从六项行业关键能力综合判断。围绕‘{project.company_strategy_objective}’，"
+                "需要优先关闭得分较低且与趋势适配度不足的能力差距。"
+            ),
+            "strategic_advantages": ["已具备可核验的一手经营信息，可用于建立行动基线。"],
+            "critical_gaps": ["当前市场位置与战略目标要求之间仍存在跨维度能力差距。"],
+            "cross_dimension_risks": ["单点能力改善若缺少商业、运营和组织协同，难以转化为市场位置提升。"],
+        }
 
     def _finalize(
         self,

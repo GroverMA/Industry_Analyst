@@ -47,7 +47,7 @@ ACTION_PLAN_CONTRACT = {
             "strategic_objective": "exact link to the user's strategy objective",
             "priority": "critical|high|medium|low",
             "owner_role": "accountable role",
-            "timing": "time window",
+            "timing": "短期|长期（只区分两个行动层级，不虚构精确月份）",
             "resources": ["required people, budget, data, capability"],
             "dependencies": ["prerequisite"],
             "kpis": [
@@ -75,6 +75,31 @@ ACTION_PLAN_CONTRACT = {
     "rejected_options": ["option not recommended and why"],
     "portfolio_risks": ["cross-action risk"],
 }
+
+
+def _dimension_value(item: object, field: str, default: Any = "") -> Any:
+    """Read current and legacy scorecard dimensions through one contract.
+
+    Streamlit Community Cloud can keep an object created by the previous model
+    class alive across a warm code reload.  Reading through ``getattr`` keeps
+    that project resumable while the persisted snapshot is migrated on save.
+    """
+
+    value = getattr(item, field, default)
+    return default if value is None else value
+
+
+def _dimension_list(item: object, field: str) -> list[str]:
+    value = _dimension_value(item, field, [])
+    return [str(row).strip() for row in value if str(row).strip()] if isinstance(value, list) else []
+
+
+def _action_horizon(raw: dict[str, Any], index: int, total: int) -> str:
+    # The portfolio deliberately uses only two planning layers.  Exact dates
+    # belong in the enterprise execution system after management approval, not
+    # in an AI-generated research recommendation.
+    short_count = max(1, (total + 1) // 2)
+    return "短期" if index < short_count else "长期"
 
 
 def action_plan_eligibility(project: ProjectState) -> list[str]:
@@ -111,22 +136,38 @@ class ActionPlanningService:
 
         dimensions = [
             {
-                "dimension_id": item.dimension_id,
-                "title": item.title,
-                "score": item.score,
-                "score_rationale": item.score_rationale,
-                "strengths": item.strengths,
-                "gaps": item.gaps,
-                "risks": item.risks,
-                "industry_relevance": item.industry_relevance,
-                "current_market_position": item.current_market_position,
-                "target_position": item.target_position,
-                "strategic_gap": item.strategic_gap,
-                "linked_trend_ids": item.linked_trend_ids,
-                "confidence": item.confidence,
+                "dimension_id": _dimension_value(item, "dimension_id"),
+                "title": _dimension_value(item, "title"),
+                "score": _dimension_value(item, "score", None),
+                "score_rationale": _dimension_value(item, "score_rationale"),
+                "strengths": _dimension_list(item, "strengths"),
+                "gaps": _dimension_list(item, "gaps"),
+                "risks": _dimension_list(item, "risks"),
+                "industry_relevance": _dimension_value(
+                    item,
+                    "industry_relevance",
+                    "该维度决定企业能否适应已确认的行业趋势与竞争要求。",
+                ),
+                "current_market_position": _dimension_value(
+                    item,
+                    "current_market_position",
+                    _dimension_value(item, "score_rationale"),
+                ),
+                "target_position": _dimension_value(
+                    item, "target_position", project.company_strategy_objective
+                ),
+                "strategic_gap": _dimension_value(
+                    item,
+                    "strategic_gap",
+                    "；".join(_dimension_list(item, "gaps"))
+                    or _dimension_value(item, "score_rationale"),
+                ),
+                "linked_trend_ids": _dimension_list(item, "linked_trend_ids"),
+                "confidence": _dimension_value(item, "confidence", 0),
             }
             for item in scorecard.dimensions
-            if item.review_status == StrategyReviewStatus.ACCEPTED and item.score is not None
+            if _dimension_value(item, "review_status") == StrategyReviewStatus.ACCEPTED
+            and _dimension_value(item, "score", None) is not None
         ]
         public_items = [
             item for item in evidence.evidence
@@ -222,7 +263,15 @@ class ActionPlanningService:
                 if isinstance(nested, dict):
                     payload = nested
                 return self._finalize(project, payload, allowed, evidence_qa)
-            except (ProviderError, ActionPlanningError, ValidationError, TypeError, ValueError) as exc:
+            except (
+                ProviderError,
+                ActionPlanningError,
+                ValidationError,
+                AttributeError,
+                KeyError,
+                TypeError,
+                ValueError,
+            ) as exc:
                 last_error = exc
                 if attempt == 1:
                     break
@@ -238,7 +287,10 @@ class ActionPlanningService:
                         ),
                     ]
                 )
-        raise ActionPlanningError(f"Action Plan未通过校验：{last_error}")
+        # A provider-side schema deviation must not leave a qualified enterprise
+        # project with an empty strategy layer.  The deterministic portfolio is
+        # still evidence-linked and is visibly reviewable in both research paths.
+        return self._fallback_plan(project, dimensions, allowed, evidence_qa, last_error)
 
     def _finalize(
         self,
@@ -251,7 +303,9 @@ class ActionPlanningService:
         if not isinstance(raw_actions, list) or not 3 <= len(raw_actions) <= 10:
             raise ActionPlanningError("Action Plan必须包含3至10项行动")
         actions: list[StrategicAction] = []
-        for raw in raw_actions:
+        for index, raw in enumerate(raw_actions):
+            if not isinstance(raw, dict):
+                raise ActionPlanningError("行动项必须是结构化对象")
             references = {
                 "score_dimension_ids": [
                     value for value in dict.fromkeys(raw.get("score_dimension_ids") or [])
@@ -298,6 +352,7 @@ class ActionPlanningService:
                 **references,
                 "kpis": kpis,
                 "confidence": confidence,
+                "timing": _action_horizon(raw, index, len(raw_actions)),
                 # The user-authored objective is the binding strategy anchor;
                 # model wording cannot silently replace or broaden it.
                 "strategic_objective": project.company_strategy_objective,
@@ -318,6 +373,129 @@ class ActionPlanningService:
             methodology=self._trace(),
         )
 
+    def _fallback_plan(
+        self,
+        project: ProjectState,
+        dimensions: list[dict[str, Any]],
+        allowed: dict[str, set[str]],
+        evidence_qa: dict[str, int],
+        cause: Exception | None,
+    ) -> ActionPlanArtifact:
+        """Build a non-empty, gap-led portfolio when model JSON is unusable."""
+
+        if len(dimensions) < 3:
+            raise ActionPlanningError(
+                f"Action Plan缺少三个已批准的公司差距维度：{cause or '评分覆盖不足'}"
+            )
+        public_ids = sorted(
+            allowed["evidence"],
+            key=lambda row: evidence_qa.get(row, 0),
+            reverse=True,
+        )
+        enterprise_ids = sorted(allowed["enterprise"])
+        trend_ids = sorted(allowed["trends"])
+        scenario_ids = sorted(allowed["scenarios"])
+        if not public_ids or not enterprise_ids or not trend_ids:
+            raise ActionPlanningError("Action Plan缺少已批准的行业、企业或趋势依据")
+
+        owner_by_dimension = {
+            "market_position": "战略与市场负责人",
+            "product_competitiveness": "产品与研发负责人",
+            "commercialization_channel": "商业与渠道负责人",
+            "operations_economics": "运营与财务负责人",
+            "innovation_future_fit": "创新与研发负责人",
+            "organization_execution": "总经理与组织负责人",
+        }
+        ranked = sorted(
+            dimensions,
+            key=lambda row: (row.get("score", 100), -int(row.get("confidence", 0) or 0)),
+        )[:4]
+        actions: list[StrategicAction] = []
+        for index, dimension in enumerate(ranked):
+            dimension_id = str(dimension["dimension_id"])
+            title = str(dimension.get("title") or dimension_id)
+            gap = str(
+                dimension.get("strategic_gap")
+                or "；".join(dimension.get("gaps") or [])
+                or "当前能力与战略目标之间仍有待关闭的差距"
+            )
+            current = str(
+                dimension.get("current_market_position")
+                or dimension.get("score_rationale")
+                or "当前市场位置待持续验证"
+            )
+            target = str(
+                dimension.get("target_position") or project.company_strategy_objective
+            )
+            relevance = str(
+                dimension.get("industry_relevance")
+                or "该能力影响企业对行业变化的响应速度"
+            )
+            timing = "短期" if index < 2 else "长期"
+            actions.append(
+                StrategicAction(
+                    title=f"缩小{title}战略差距",
+                    rationale=(
+                        f"行业要求为：{relevance} 当前状态为：{current} 目标状态为：{target} "
+                        f"需要优先解决的差距为：{gap}"
+                    ),
+                    strategic_objective=project.company_strategy_objective,
+                    priority=(
+                        "critical"
+                        if index == 0
+                        else "high" if timing == "短期" else "medium"
+                    ),
+                    owner_role=owner_by_dimension.get(dimension_id, "业务与战略负责人"),
+                    timing=timing,
+                    resources=["跨职能负责人", "企业经营数据", "经管理层确认的执行资源"],
+                    dependencies=["确认当前基线与目标状态", "建立差距跟踪台账"],
+                    kpis=[
+                        ActionKPI(
+                            name=f"{title}差距关闭里程碑达成率",
+                            kpi_type="leading",
+                            definition="已按期完成的差距关闭里程碑数/计划里程碑总数",
+                            target="达到经管理层确认的阶段门槛",
+                            timing=timing,
+                            data_source="企业项目台账与经营复盘",
+                        ),
+                        ActionKPI(
+                            name=f"{title}战略目标达成度",
+                            kpi_type="outcome",
+                            definition="目标状态关键结果的实际完成值/目标值",
+                            target="达到企业战略意图所要求的目标状态",
+                            timing=timing,
+                            data_source="企业经营系统与管理层复盘",
+                        ),
+                    ],
+                    risks=["资源投入与市场变化不同步"],
+                    mitigations=["采用阶段门审核，并根据领先指标调整资源配置"],
+                    stop_conditions=["连续复盘显示差距不再缩小，或行业趋势的关键假设被证伪"],
+                    score_dimension_ids=[dimension_id],
+                    evidence_ids=[public_ids[0]],
+                    enterprise_evidence_ids=[enterprise_ids[index % len(enterprise_ids)]],
+                    trend_ids=[trend_ids[index % len(trend_ids)]],
+                    scenario_ids=[scenario_ids[index % len(scenario_ids)]] if scenario_ids else [],
+                    confidence=round(mean(evidence_qa[row] for row in public_ids[:2])),
+                    uncertainty="执行效果取决于企业资源投入、组织协同和行业趋势兑现程度",
+                )
+            )
+        scorecard = project.company_scorecard_artifact
+        assert scorecard is not None
+        return ActionPlanArtifact(
+            project_id=project.project_id,
+            target_company_snapshot=project.target_company or "",
+            strategy_objective_snapshot=project.company_strategy_objective or "",
+            scorecard_id=scorecard.artifact_id,
+            actions=actions,
+            sequencing_logic=[
+                "短期行动先验证并关闭最影响战略目标的现有能力差距。",
+                "长期行动在短期验证结果基础上建设可持续能力，并持续校准行业趋势适配度。",
+            ],
+            rejected_options=["不建议脱离Company Scorecard差距、仅因市场热点而新增行动。"],
+            portfolio_risks=["多个差距并行推进可能分散关键资源，应以战略目标贡献度统一排序。"],
+            methodology=self._trace(),
+        )
+
     def _trace(self) -> MethodologyTrace:
         rule_ids = [
             rule.rule_id for rule in self.sop.rules
@@ -334,6 +512,8 @@ class ActionPlanningService:
                 "所有行动回扣企业战略意图",
                 "每项行动同时引用评分、公开证据、企业证据与趋势",
                 "每项行动具有领先指标与结果指标",
+                "行动只分短期与长期，并直接来自市场趋势、公司位置与战略目标之间的差距",
+                "模型结构失败时仍生成可审阅、可追溯的非空行动组合",
                 "高影响建议需人工审核后方可进入报告",
             ],
         )

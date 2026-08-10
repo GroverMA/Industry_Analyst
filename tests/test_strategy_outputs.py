@@ -42,7 +42,7 @@ from src.models.future import (
 from src.models.report import GeneralReportArtifact
 from src.models.research import MethodologyTrace
 from src.models.strategy import StrategyReviewStatus
-from src.providers.base import ModelResponse
+from src.providers.base import ModelResponse, ProviderError
 from src.services.action_planning import (
     ActionPlanningError,
     ActionPlanningService,
@@ -67,6 +67,39 @@ class FakeModel:
     def complete_json(self, messages, *, enable_thinking=False):
         self.calls += 1
         return self.payload, ModelResponse(content="{}", model="fake")
+
+
+class FailingModel:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def complete_json(self, messages, *, enable_thinking=False):
+        self.calls += 1
+        raise ProviderError("provider returned unusable structured output")
+
+
+class LegacyScoreDimension:
+    """Shape persisted before market-position and strategic-gap fields existed."""
+
+    def __init__(self, item) -> None:
+        for field in (
+            "dimension_id",
+            "title",
+            "weight",
+            "score",
+            "score_rationale",
+            "strengths",
+            "gaps",
+            "risks",
+            "confidence",
+            "review_status",
+        ):
+            setattr(self, field, getattr(item, field))
+
+    def model_copy(self, *, update: dict):
+        clone = LegacyScoreDimension.__new__(LegacyScoreDimension)
+        clone.__dict__ = {**self.__dict__, **update}
+        return clone
 
 
 def eligible_project() -> tuple[ProjectState, str, str, str, str]:
@@ -466,6 +499,7 @@ def test_scorecard_and_action_plan_require_human_review() -> None:
 
     assert action_plan.human_confirmed is True
     assert all({kpi.kpi_type.value for kpi in item.kpis} == {"leading", "outcome"} for item in action_plan.actions)
+    assert {item.timing for item in action_plan.actions} == {"短期", "长期"}
 
     project = project.model_copy(update={"action_plan_artifact": action_plan})
     report = generate_enterprise_decision_report(project)
@@ -506,6 +540,56 @@ def test_action_plan_prunes_unknown_trace_ids_and_keeps_pipeline_running() -> No
     assert artifact.actions[0].score_dimension_ids == ["market_position"]
     assert artifact.actions[0].enterprise_evidence_ids == [enterprise_id]
     assert artifact.actions[0].trend_ids == [trend_id]
+
+
+def test_build_first_strategy_pipeline_never_leaves_scorecard_or_action_plan_blank() -> None:
+    project, _, _, _, _ = eligible_project()
+    failing_company_model = FailingModel()
+    scorecard = CompanyAssessmentService(failing_company_model, load_active_sop()).generate(project)
+
+    assert failing_company_model.calls == 2
+    assert len(scorecard.dimensions) == 6
+    assert all(item.current_market_position for item in scorecard.dimensions)
+    assert all(item.target_position == project.company_strategy_objective for item in scorecard.dimensions)
+    assert all(item.strategic_gap for item in scorecard.dimensions)
+
+    for item in scorecard.dimensions:
+        scorecard = review_score_dimension(
+            scorecard, item.dimension_id, StrategyReviewStatus.ACCEPTED
+        )
+    scorecard = confirm_scorecard(scorecard)
+    project = project.model_copy(update={"company_scorecard_artifact": scorecard})
+
+    failing_action_model = FailingModel()
+    plan = ActionPlanningService(failing_action_model, load_active_sop()).generate(project)
+
+    assert failing_action_model.calls == 2
+    assert len(plan.actions) >= 3
+    assert {item.timing for item in plan.actions} == {"短期", "长期"}
+    assert all(item.rationale and item.score_dimension_ids for item in plan.actions)
+    assert all(item.strategic_objective == project.company_strategy_objective for item in plan.actions)
+
+
+def test_review_first_strategy_pipeline_migrates_legacy_scorecard_dimensions() -> None:
+    project, evidence_id, enterprise_id, _, _ = eligible_project()
+    scorecard = CompanyAssessmentService(
+        FakeModel(scorecard_payload(evidence_id, enterprise_id)), load_active_sop()
+    ).generate(project)
+    for item in scorecard.dimensions:
+        scorecard = review_score_dimension(
+            scorecard, item.dimension_id, StrategyReviewStatus.ACCEPTED
+        )
+    scorecard = confirm_scorecard(scorecard)
+    legacy_scorecard = scorecard.model_copy(
+        update={"dimensions": [LegacyScoreDimension(item) for item in scorecard.dimensions]}
+    )
+    project = project.model_copy(update={"company_scorecard_artifact": legacy_scorecard})
+
+    plan = ActionPlanningService(FailingModel(), load_active_sop()).generate(project)
+
+    assert len(plan.actions) >= 3
+    assert {item.timing for item in plan.actions} == {"短期", "长期"}
+    assert all("战略目标" in item.rationale or "目标状态" in item.rationale for item in plan.actions)
 
 
 def test_project_snapshot_round_trips_strategy_artifacts() -> None:

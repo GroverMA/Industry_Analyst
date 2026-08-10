@@ -252,31 +252,39 @@ def generate_enterprise_decision_report(project: ProjectState) -> EnterpriseDeci
             "",
         ]
     )
-    for index, action in enumerate(accepted_actions, start=1):
-        lines.extend(
-            [
-                f"### 9.{index} {action.title}",
-                "",
-                _paragraph(
-                    f"该项行动优先级为{action.priority.value}，并以{action.strategic_objective}为战略锚点",
-                    f"建议由{action.owner_role}负责，并在{action.timing}内推进",
-                    action.rationale,
-                    f"所需资源包括{'、'.join(action.resources)}",
-                    f"主要依赖包括{'、'.join(action.dependencies) if action.dependencies else '无额外依赖'}",
-                    f"主要风险包括{'、'.join(action.risks)}，对应缓解措施包括{'、'.join(action.mitigations)}",
-                    f"若出现{'、'.join(action.stop_conditions)}，应停止、调整或转向该项行动",
-                    f"该建议置信度为{action.confidence}%，主要不确定性为{action.uncertainty}",
-                ),
-                "",
-                "| 指标类型 | 指标名称 | 指标定义 | 目标值 | 时间要求 | 数据来源 |",
-                "|---|---|---|---|---|---|",
-            ]
-        )
-        for kpi in action.kpis:
-            lines.append(
-                f"| {kpi.kpi_type.value} | {kpi.name} | {kpi.definition} | "
-                f"{kpi.target} | {kpi.timing} | {kpi.data_source} |"
+    action_groups = (
+        ("短期行动", [item for item in accepted_actions if item.timing != "长期"]),
+        ("长期行动", [item for item in accepted_actions if item.timing == "长期"]),
+    )
+    for group_index, (group_title, group_actions) in enumerate(action_groups, start=1):
+        if not group_actions:
+            continue
+        lines.extend([f"### 9.{group_index} {group_title}", ""])
+        for action_index, action in enumerate(group_actions, start=1):
+            lines.extend(
+                [
+                    f"#### 9.{group_index}.{action_index} {action.title}",
+                    "",
+                    _paragraph(
+                        f"该项行动优先级为{action.priority.value}，并以{action.strategic_objective}为战略锚点",
+                        f"建议由{action.owner_role}负责，作为{group_title}推进",
+                        action.rationale,
+                        f"所需资源包括{'、'.join(action.resources)}",
+                        f"主要依赖包括{'、'.join(action.dependencies) if action.dependencies else '无额外依赖'}",
+                        f"主要风险包括{'、'.join(action.risks)}，对应缓解措施包括{'、'.join(action.mitigations)}",
+                        f"若出现{'、'.join(action.stop_conditions)}，应停止、调整或转向该项行动",
+                        f"该建议置信度为{action.confidence}%，主要不确定性为{action.uncertainty}",
+                    ),
+                    "",
+                    "| 指标类型 | 指标名称 | 指标定义 | 目标值 | 时间要求 | 数据来源 |",
+                    "|---|---|---|---|---|---|",
+                ]
             )
+            for kpi in action.kpis:
+                lines.append(
+                    f"| {kpi.kpi_type.value} | {kpi.name} | {kpi.definition} | "
+                    f"{kpi.target} | {kpi.timing} | {kpi.data_source} |"
+                )
 
     lines.extend(
         [

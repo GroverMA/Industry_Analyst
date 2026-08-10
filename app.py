@@ -51,7 +51,7 @@ st.set_page_config(
 
 
 RUNTIME_RELEASE_KEY = "industry_analyst_runtime_release"
-RUNTIME_RELEASE_ID = "trident-research-paths-v1"
+RUNTIME_RELEASE_ID = "trident-strategy-gap-pipeline-v2"
 
 # Community Cloud updates the checkout without always restarting the Python
 # process. Refresh the modules changed by this release once per browser session
@@ -74,6 +74,14 @@ if (
     # definition (which did not yet expose ``ForecastMethod``).
     future_model_module = importlib.reload(
         importlib.import_module("src.models.future")
+    )
+    # Strategy models changed after the first Trident release.  Reload them
+    # before ProjectState and every strategy service; otherwise a warm
+    # Community Cloud worker can deserialize a scorecard with the previous
+    # CompanyScoreDimension class while ActionPlanningService executes the new
+    # contract, producing misleading "object has no attribute" failures.
+    strategy_model_module = importlib.reload(
+        importlib.import_module("src.models.strategy")
     )
     importlib.reload(importlib.import_module("src.models.revision"))
     project_state_module = importlib.reload(
