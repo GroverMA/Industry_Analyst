@@ -1482,8 +1482,8 @@ def _render_report(project: ProjectState) -> None:
 def _run_reviewer_report_pipeline(project: ProjectState) -> None:
     """Generate a report-first draft and its complete trace package.
 
-    Reviewer mode does not expose intermediate generation gates.  The same
-    Sullivan SOP and validation services still run; the resulting evidence,
+    Reviewer mode does not expose intermediate generation gates. The locked
+    research SOP and validation services still run; the resulting evidence,
     analysis, forecast and strategy artifacts are presented afterward as an
     auditable workpaper rather than as a sequence the reviewer must operate.
     """

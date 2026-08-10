@@ -435,7 +435,7 @@ def test_future_still_rejects_forecast_with_no_grounded_top_level_reference() ->
         )
 
 
-def test_future_prompt_contains_sullivan_development_direction_rules() -> None:
+def test_future_prompt_contains_professional_development_direction_rules() -> None:
     project, evidence_artifact, analysis, evidence, finding = fixtures()
 
     class CapturingModel(FakeModel):

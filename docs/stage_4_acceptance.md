@@ -137,7 +137,7 @@ Live browser result:
 4. Evidence remains in the Streamlit browser session rather than a persistent
    database.
 5. The active research methodology is still the temporary generic baseline,
-   pending the Sullivan SOP pack.
+   pending the professional SOP pack.
 
 ## 9. Decision requested
 

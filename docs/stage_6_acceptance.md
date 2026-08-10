@@ -92,7 +92,7 @@ The temporary generic baseline adds:
 - `FUTURE-004`: leading indicators and falsifiability;
 - `FUTURE-005`: no false numerical precision.
 
-These remain replaceable by a later Sullivan trend-forecasting SOP pack.
+These remain replaceable by a later professional trend-forecasting SOP pack.
 
 ## 8. Verification
 
@@ -135,7 +135,7 @@ Evidence Matrix and Industry Analysis review.
 3. No persistent monitoring scheduler or database exists yet.
 4. Historical time-series adapters and quantitative forecasting are future
    extensions.
-5. The methodology pack remains a generic baseline rather than Sullivan SOP.
+5. The methodology pack remains a generic baseline rather than a specialized SOP.
 6. Forecast artifacts remain in the Streamlit browser session.
 
 ## 10. Decision requested

@@ -17,8 +17,10 @@ from src.models.enterprise import (
 )
 from src.services.enterprise_sensing import (
     EnterpriseSensingError,
+    accepted_unredacted_entries,
     company_strategy_gate_reasons,
     confirm_enterprise_artifact,
+    delete_enterprise_entry,
     diagnosis_title_from_symptoms,
     enterprise_item_from_upload,
     load_redacted_demo_enterprise_pack,
@@ -216,11 +218,18 @@ def render(project: ProjectState | None) -> None:
         "可一次上传同一数据层面的多个文件，并可重复新增不同批次，例如Sell-in、Sell-out、客户渗透率、"
         "库存、价格与毛利。支持DOCX、XLSX、PPTX、PDF、TXT、Markdown和CSV；单文件不超过300MB。"
     )
-    with st.form("enterprise_file_entry", border=True):
+    upload_notice = st.session_state.pop("enterprise_file_upload_notice", None)
+    if upload_notice:
+        st.success(upload_notice["success"])
+        if upload_notice.get("failures"):
+            st.error("以下文件接入失败：" + "；".join(upload_notice["failures"]))
+    upload_form_version = int(st.session_state.get("enterprise_file_form_version", 0))
+    with st.form(f"enterprise_file_entry_{upload_form_version}", border=True):
         uploaded_files = st.file_uploader(
             "选择一个或多个文件",
             type=["txt", "md", "csv", "pdf", "docx", "xlsx", "pptx"],
             accept_multiple_files=True,
+            key=f"enterprise_files_{upload_form_version}",
         )
         col_dimension, col_period = st.columns(2)
         data_dimension = col_dimension.selectbox(
@@ -242,7 +251,7 @@ def render(project: ProjectState | None) -> None:
             "文件敏感级别",
             list(EnterpriseSensitivity),
             format_func=SENSITIVITY_LABELS.get,
-            key="enterprise_file_sensitivity",
+            key=f"enterprise_file_sensitivity_{upload_form_version}",
         )
         add_file = st.form_submit_button("提取文字并加入待审核资料", width="stretch")
         if add_file:
@@ -269,8 +278,13 @@ def render(project: ProjectState | None) -> None:
                         failures.append(f"{uploaded.name}：{exc}")
                 if added:
                     _save_artifact(project, artifact)
-                    st.success(f"已加入{added}个文件；可继续上传其他数据层面的资料。")
-                if failures:
+                    st.session_state["enterprise_file_form_version"] = upload_form_version + 1
+                    st.session_state["enterprise_file_upload_notice"] = {
+                        "success": f"已加入{added}个文件；表单已清空，可继续上传下一批资料。",
+                        "failures": failures,
+                    }
+                    st.rerun()
+                elif failures:
                     st.error("以下文件接入失败：" + "；".join(failures))
 
     st.subheader("C. 人工审核企业资料")
@@ -324,7 +338,7 @@ def render(project: ProjectState | None) -> None:
                 value=item.reviewer_note or "",
                 key=f"enterprise_note_{item.enterprise_evidence_id}",
             )
-            col_accept, col_reject = st.columns(2)
+            col_accept, col_reject, col_delete = st.columns(3)
             if col_accept.button(
                 "接受为企业证据",
                 type="primary",
@@ -352,9 +366,31 @@ def render(project: ProjectState | None) -> None:
                 )
                 _save_artifact(project, reviewed)
                 st.rerun()
+            if col_delete.button(
+                "删除",
+                key=f"delete_{item.enterprise_evidence_id}",
+                width="stretch",
+                help="永久移除误上传或不再需要的本条资料。",
+            ):
+                cleaned = delete_enterprise_entry(
+                    artifact,
+                    item.enterprise_evidence_id,
+                )
+                _save_artifact(project, cleaned)
+                st.rerun()
 
     st.subheader("D. 权限确认与战略路径资格")
     with st.container(border=True):
+        blocking_entries = accepted_unredacted_entries(artifact)
+        if blocking_entries:
+            st.error(
+                "以下资料当前为 Accepted，但敏感级别并非‘脱敏/模拟’，因此会阻塞公开演示确认：\n\n"
+                + "\n\n".join(
+                    f"- {item.enterprise_evidence_id} · {item.title} · {SENSITIVITY_LABELS[item.sensitivity]}"
+                    for item in blocking_entries
+                )
+                + "\n\n请在上方将其拒绝或删除。Rejected资料不会参与确认校验。"
+            )
         consent = st.checkbox(
             "我允许比赛提供的模型服务在当前项目中处理已接受的脱敏/模拟企业资料",
             value=artifact.consent_to_model_processing,

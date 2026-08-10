@@ -64,7 +64,7 @@ def context() -> ReportExportContext:
         time_horizon="2026-2030",
         report_status="经人工审核的通用行业研究报告",
         generated_at=datetime(2026, 7, 27, tzinfo=UTC),
-        sop_label="沙利文行业研究 SOP v1.0.0",
+        sop_label="Trident 专业行业研究 SOP v1.0.0",
     )
 
 
@@ -75,7 +75,7 @@ def test_word_export_is_editable_and_contains_report_content() -> None:
     document = Document(io.BytesIO(payload))
     text = "\n".join(paragraph.text for paragraph in document.paragraphs)
     assert "中国分子诊断行业研究报告" in text
-    assert "沙利文行业研究 SOP v1.0.0" in text
+    assert "Trident 专业行业研究 SOP v1.0.0" in text
     assert "市场现状与竞争格局" in text
     assert "####" not in text
     assert len(document.tables) == 1
@@ -117,7 +117,7 @@ def test_project_context_uses_the_projects_sop_version() -> None:
         time_horizon="2026-2030",
         research_brief_artifact=SimpleNamespace(
             methodology=SimpleNamespace(
-                sop_name="沙利文行业研究 SOP",
+                sop_name="Trident 专业行业研究 SOP",
                 sop_version="1.0.0",
             )
         ),
@@ -131,7 +131,7 @@ def test_project_context_uses_the_projects_sop_version() -> None:
         generated_at=datetime(2026, 7, 27, tzinfo=UTC),
     )
 
-    assert export.sop_label == "沙利文行业研究 SOP v1.0.0"
+    assert export.sop_label == "Trident 专业行业研究 SOP v1.0.0"
 
 
 def test_download_button_theme_forces_white_text() -> None:

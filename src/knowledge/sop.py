@@ -14,7 +14,7 @@ DEFAULT_SOP_PATH = (
     Path(__file__).resolve().parents[2]
     / "knowledge_packs"
     / "research_sop"
-    / "sullivan_industry_research_v2.json"
+    / "trident_industry_research_v2.json"
 )
 
 

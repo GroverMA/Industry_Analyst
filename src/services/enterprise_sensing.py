@@ -185,6 +185,41 @@ def review_enterprise_entry(
     )
 
 
+def delete_enterprise_entry(
+    artifact: EnterpriseSensingArtifact,
+    enterprise_evidence_id: str,
+) -> EnterpriseSensingArtifact:
+    """Remove an accidentally added enterprise item and invalidate confirmation."""
+
+    entries = [
+        item
+        for item in artifact.entries
+        if item.enterprise_evidence_id != enterprise_evidence_id
+    ]
+    if len(entries) == len(artifact.entries):
+        raise ValueError(f"unknown enterprise evidence: {enterprise_evidence_id}")
+    return artifact.model_copy(
+        update={
+            "entries": entries,
+            "human_confirmed": False,
+            "confirmed_at": None,
+            "updated_at": datetime.now(UTC),
+        }
+    )
+
+
+def accepted_unredacted_entries(
+    artifact: EnterpriseSensingArtifact,
+) -> list[EnterpriseEvidenceItem]:
+    """Return only accepted items that still violate the public-demo boundary."""
+
+    return [
+        item
+        for item in artifact.accepted_entries
+        if item.sensitivity != EnterpriseSensitivity.REDACTED_DEMO
+    ]
+
+
 def confirm_enterprise_artifact(
     artifact: EnterpriseSensingArtifact,
     project: ProjectState,
@@ -198,12 +233,14 @@ def confirm_enterprise_artifact(
         raise EnterpriseSensingError("必须明确允许本项目模型处理已接受的企业资料")
     if not public_demo_acknowledged:
         raise EnterpriseSensingError("必须确认公开演示版只使用脱敏或模拟资料")
-    if any(
-        item.sensitivity != EnterpriseSensitivity.REDACTED_DEMO
-        for item in artifact.accepted_entries
-    ):
+    blocking_entries = accepted_unredacted_entries(artifact)
+    if blocking_entries:
+        titles = "、".join(item.title for item in blocking_entries[:5])
+        if len(blocking_entries) > 5:
+            titles += f"等{len(blocking_entries)}项"
         raise EnterpriseSensingError(
-            "公开演示版不能确认未脱敏的内部、机密或受限资料，请改用脱敏或模拟内容"
+            "以下已接受资料仍标记为内部、机密或受限，不能用于公开演示："
+            f"{titles}。请在人工审核中拒绝或删除这些资料。"
         )
     return artifact.model_copy(
         update={

@@ -1,10 +1,10 @@
 {
   "sop_id": "generic_research_baseline",
-  "display_name": "通用行业研究方法基线（待替换为沙利文 SOP）",
+  "display_name": "通用行业研究方法基线",
   "version": "1.0.0",
   "pack_type": "baseline",
   "locked": true,
-  "description": "用于快速跑通产品流程的临时方法包。沙利文 SOP Pack 上线后将整体替换本包。",
+  "description": "用于快速跑通产品流程的通用方法包，可由后续版本化专业方法包替换。",
   "rules": [
     {
       "rule_id": "BRIEF-001",

@@ -1,6 +1,6 @@
 {
-  "sop_id": "sullivan_industry_research",
-  "display_name": "沙利文行业研究 SOP",
+  "sop_id": "trident_industry_research",
+  "display_name": "Trident 专业行业研究 SOP",
   "version": "2.0.0",
   "pack_type": "methodology",
   "locked": true,

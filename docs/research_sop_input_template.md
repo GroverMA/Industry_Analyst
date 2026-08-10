@@ -1,8 +1,8 @@
-# Sullivan Research SOP — Future Input Template
+# Professional Research SOP — Future Input Template
 
 This document defines the information needed to replace the temporary generic
-baseline with the user's Sullivan research methodology. It does not contain or
-claim any proprietary Sullivan content yet.
+baseline with a versioned professional research methodology. It does not claim
+any third-party proprietary methodology.
 
 ## 1. Project intake and decision definition
 
@@ -81,4 +81,3 @@ claim any proprietary Sullivan content yet.
 Each supplied rule will receive a stable rule ID, for example `SUL-BRIEF-001`,
 and every generated artifact will record the exact SOP version, content hash,
 applicable rule IDs, and compliance checks.
-

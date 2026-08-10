@@ -150,5 +150,4 @@ and repeatable offline tests.
 
 Stage 2 may begin only after user review. Stage 2 will create the lightweight
 Streamlit product shell and universal project-entry flow; it will not yet encode
-the Sullivan research SOP or generate a full industry report.
-
+the professional research SOP or generate a full industry report.

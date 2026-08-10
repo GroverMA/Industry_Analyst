@@ -124,11 +124,11 @@ The new tests verify system-computed scores, explicit unscored behavior,
 unknown-ID rejection, score and action human gates, KPI type requirements,
 enterprise-report composition, and strategy-artifact snapshot recovery.
 
-## 9. Current limitation and Sullivan input point
+## 9. Current limitation and professional-method input point
 
-The active generic SOP pack does not yet contain Sullivan-specific company-
+The active generic SOP pack does not yet contain specialized company-
 assessment and Action Plan rules. Until the user supplies that pack, these
 artifacts record the baseline governance rules (`PLAN-004`, `GOV-001`) as their
 methodology fallback. The service and artifact contracts are already separated
-from the UI, so the Sullivan SOP can replace the generic instructions without
+from the UI, so a versioned professional SOP can replace the generic instructions without
 rewriting the workflow or report pages.

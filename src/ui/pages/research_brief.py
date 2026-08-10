@@ -56,7 +56,7 @@ def render(project: ProjectState | None) -> None:
         unsafe_allow_html=True,
     )
     if sop.pack_type == "baseline":
-        st.warning("当前使用通用研究方法基线。您提供沙利文SOP知识包后，将由沙利文方法包整体替换。")
+        st.warning("当前使用通用研究方法基线；更新后的专业方法包可通过版本化配置接入。")
 
     st.subheader("A. 项目原始输入")
     company_strategy_enabled = st.toggle(

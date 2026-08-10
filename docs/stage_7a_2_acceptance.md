@@ -145,7 +145,7 @@ transports=['rest']
 2. Cross-device persistence requires later authentication and tenant-isolated
    PostgreSQL or Supabase storage.
 3. Full multi-task live research may take several minutes.
-4. The baseline SOP remains active until the Sullivan SOP pack is supplied.
+4. The baseline SOP remains active until a versioned professional SOP pack is supplied.
 5. Company Scorecard and Action Plan are eligibility shells for the next stage.
 
 ## 11. Decision requested

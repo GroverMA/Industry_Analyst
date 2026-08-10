@@ -173,7 +173,7 @@ counter-evidence requirements, dependencies, and review gates.
 The active methodology pack is versioned, fingerprinted, injected as a locked
 instruction layer, and recorded on every generated artifact. Invalid model
 output is rejected and receives one SOP-preserving repair attempt. The bundled
-generic baseline exists only to run the workflow now; a future Sullivan SOP Pack
+generic baseline exists only to run the workflow now; a future professional SOP pack
 will replace it without changing the Research Core or UI workflow.
 
 The Stage 2 shell remains industry-neutral: users can create projects for any
@@ -194,4 +194,4 @@ See [docs/stage_6_acceptance.md](docs/stage_6_acceptance.md).
 See [docs/stage_7a_acceptance.md](docs/stage_7a_acceptance.md).
 See [docs/stage_7a_2_acceptance.md](docs/stage_7a_2_acceptance.md).
 See [docs/stage_7b_acceptance.md](docs/stage_7b_acceptance.md).
-See [docs/sullivan_sop_input_template.md](docs/sullivan_sop_input_template.md).
+See [docs/research_sop_input_template.md](docs/research_sop_input_template.md).

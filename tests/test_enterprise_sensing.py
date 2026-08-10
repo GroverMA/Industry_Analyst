@@ -16,9 +16,11 @@ from src.models.enterprise import (
 from src.services.enterprise_sensing import (
     MAX_UPLOAD_BYTES,
     EnterpriseSensingError,
+    accepted_unredacted_entries,
     company_strategy_gate_reasons,
     confirm_enterprise_artifact,
     diagnosis_title_from_symptoms,
+    delete_enterprise_entry,
     enterprise_item_from_upload,
     extract_document_text,
     new_enterprise_artifact,
@@ -116,7 +118,7 @@ def test_public_demo_rejects_confidential_enterprise_input() -> None:
     project = make_strategy_project()
     artifact = accepted_artifact(project, sensitivity=EnterpriseSensitivity.CONFIDENTIAL)
 
-    with pytest.raises(EnterpriseSensingError, match="未脱敏"):
+    with pytest.raises(EnterpriseSensingError, match="仍标记"):
         confirm_enterprise_artifact(
             artifact,
             project,
@@ -129,13 +131,48 @@ def test_public_demo_also_rejects_unredacted_internal_input() -> None:
     project = make_strategy_project()
     artifact = accepted_artifact(project, sensitivity=EnterpriseSensitivity.INTERNAL)
 
-    with pytest.raises(EnterpriseSensingError, match="未脱敏"):
+    with pytest.raises(EnterpriseSensingError, match="仍标记"):
         confirm_enterprise_artifact(
             artifact,
             project,
             consent_to_model_processing=True,
             public_demo_acknowledged=True,
         )
+
+
+def test_rejected_confidential_input_does_not_block_public_demo() -> None:
+    project = make_strategy_project()
+    artifact = accepted_artifact(project)
+    confidential = make_item(EnterpriseSensitivity.CONFIDENTIAL).model_copy(
+        update={"title": "Rejected confidential file"}
+    )
+    artifact = upsert_enterprise_entry(artifact, project, confidential)
+    artifact = review_enterprise_entry(
+        artifact,
+        confidential.enterprise_evidence_id,
+        EnterpriseReviewStatus.REJECTED,
+        "Not suitable for public demo",
+    )
+
+    assert accepted_unredacted_entries(artifact) == []
+    confirmed = confirm_enterprise_artifact(
+        artifact,
+        project,
+        consent_to_model_processing=True,
+        public_demo_acknowledged=True,
+    )
+    assert confirmed.human_confirmed is True
+
+
+def test_enterprise_entry_can_be_deleted() -> None:
+    project = make_strategy_project()
+    artifact = upsert_enterprise_entry(None, project, make_item())
+    item_id = artifact.entries[0].enterprise_evidence_id
+
+    cleaned = delete_enterprise_entry(artifact, item_id)
+
+    assert cleaned.entries == []
+    assert cleaned.human_confirmed is False
 
 
 def test_text_and_csv_uploads_are_extracted_without_model_calls() -> None:

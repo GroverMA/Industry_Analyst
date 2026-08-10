@@ -80,7 +80,7 @@ The temporary generic baseline now adds four explicit analysis rules:
 - `ANALYSIS-003`: explain competitor and comparable-company relationships;
 - `ANALYSIS-004`: separate current analysis from future prediction.
 
-These are stable placeholders for a future Sullivan analysis SOP pack. The
+These are stable placeholders for a future professional analysis SOP pack. The
 schema, services, audit trail, and UI remain reusable when the pack is replaced.
 
 ## 7. Verification
@@ -116,7 +116,7 @@ industry analysis. No credentials or page bodies were printed.
    is surfaced rather than filled from model memory.
 2. At most 60 highest-QA accepted evidence items are included in one MVP
    analysis call.
-3. The active methodology is still a generic baseline, not Sullivan SOP.
+3. The active methodology is still a generic baseline, not a specialized SOP.
 4. Artifacts remain in the Streamlit session rather than a persistent database.
 5. Competitor financial normalization, market-sizing calculations, and
    quantitative reconciliation require later specialized methods and datasets.

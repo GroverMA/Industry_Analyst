@@ -11,7 +11,7 @@ any industry, retain project state, and show China molecular diagnostics only as
 an optional high-confidence demonstration case.
 
 This stage intentionally does not generate industry conclusions. It establishes
-the product contract and page boundaries before the Sullivan research SOP is
+the product contract and page boundaries before the professional research SOP is
 encoded.
 
 ## 2. Implemented product flow
@@ -111,5 +111,5 @@ and load the case demonstration without confusing it with the product's universa
 scope.
 
 After user approval, Stage 3 should encode the Research Brief and Research
-Planner. That stage requires the user's Sullivan research SOP input before model
+Planner. That stage requires the user's professional research SOP input before model
 prompts and orchestration code are written.

@@ -26,7 +26,7 @@ applicable rule IDs, and deterministic compliance checks. External web content
 cannot override this layer.
 
 The current pack is explicitly labelled as a temporary generic baseline. It is
-not presented as Sullivan methodology. A future Sullivan SOP Pack replaces the
+not presented as a third-party methodology. A future professional SOP pack replaces the
 baseline while keeping the same schemas, service interface, UI, and audit trail.
 
 ## 3. Research Brief capability
@@ -110,10 +110,10 @@ Live browser result:
 
 ## 7. Known limitations
 
-1. The active pack is not yet Sullivan methodology.
+1. The active pack is not yet a specialized methodology.
 2. Qualitative SOP compliance still combines prompting, structural enforcement,
    and human review; later evaluation sets should test method quality against
-   approved Sullivan examples.
+   approved professional examples.
 3. Evidence search has not started in this stage.
 4. Generated artifacts currently remain in the browser session rather than a
    persistent database.
@@ -122,5 +122,5 @@ Live browser result:
 ## 8. Decision requested
 
 Approve whether the current Brief and Planner product flow is suitable as the
-stable container for the future Sullivan SOP Pack. After approval, the rapid
+stable container for the future professional SOP pack. After approval, the rapid
 end-to-end build can proceed to evidence collection and evidence QA.
