@@ -1729,13 +1729,15 @@ def _render_scorecard_trace(project: ProjectState) -> None:
     if scorecard is None:
         st.info("尚未形成 Company Scorecard。")
         return
-    score_cols = st.columns(3)
+    score_cols = st.columns(4)
     score_cols[0].metric(
         "企业综合评分",
         f"{scorecard.weighted_score:.1f}" if scorecard.weighted_score is not None else "资料不足",
     )
     weighted_benchmark_score = getattr(scorecard, "weighted_benchmark_score", None)
     weighted_gap = getattr(scorecard, "weighted_gap", None)
+    weighted_target_score = getattr(scorecard, "weighted_strategic_target_score", None)
+    weighted_target_gap = getattr(scorecard, "weighted_strategic_target_gap", None)
     score_cols[1].metric(
         "市场基准分",
         f"{weighted_benchmark_score:.1f}"
@@ -1743,10 +1745,15 @@ def _render_scorecard_trace(project: ProjectState) -> None:
         else "资料不足",
     )
     score_cols[2].metric(
-        "基准差距",
-        f"{weighted_gap:+.1f}" if weighted_gap is not None else "资料不足",
+        "战略目标要求分",
+        f"{weighted_target_score:.1f}" if weighted_target_score is not None else "资料不足",
+    )
+    score_cols[3].metric(
+        "战略目标差距",
+        f"{weighted_target_gap:+.1f}" if weighted_target_gap is not None else "资料不足",
     )
     st.write(scorecard.overall_assessment)
+    st.caption("市场基准为同类市场玩家平均能力；战略目标要求分为实现用户战略意图所需达到的能力阈值。")
     render_scorecard_radar(scorecard, key=f"review_scorecard_radar_{scorecard.artifact_id}")
     st.dataframe(
         [
@@ -1755,6 +1762,9 @@ def _render_scorecard_trace(project: ProjectState) -> None:
                 "得分": item.score,
                 "市场基准分": getattr(item, "benchmark_score", None),
                 "基准差距": getattr(item, "benchmark_gap", None),
+                "战略目标要求分": getattr(item, "strategic_target_score", None),
+                "战略目标差距": getattr(item, "strategic_target_gap", None),
+                "核心量化指标": "；".join(getattr(item, "core_metrics", [])),
                 "市场位置": getattr(item, "market_position_label", ""),
                 "权重": f"{item.weight:.0%}",
                 "置信度": item.confidence,

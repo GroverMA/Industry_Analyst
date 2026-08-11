@@ -98,10 +98,12 @@ def render(project: ProjectState | None) -> None:
         return
 
     st.subheader("评分总览")
-    cols = st.columns(4)
+    cols = st.columns(5)
     cols[0].metric("综合得分", f"{artifact.weighted_score:.1f}" if artifact.weighted_score is not None else "未计算")
     weighted_benchmark_score = getattr(artifact, "weighted_benchmark_score", None)
     weighted_gap = getattr(artifact, "weighted_gap", None)
+    weighted_target_score = getattr(artifact, "weighted_strategic_target_score", None)
+    weighted_target_gap = getattr(artifact, "weighted_strategic_target_gap", None)
     cols[1].metric(
         "市场基准分",
         f"{weighted_benchmark_score:.1f}"
@@ -109,17 +111,23 @@ def render(project: ProjectState | None) -> None:
         else "未计算",
     )
     cols[2].metric(
-        "基准差距",
-        f"{weighted_gap:+.1f}"
-        if weighted_gap is not None
+        "战略目标要求分",
+        f"{weighted_target_score:.1f}"
+        if weighted_target_score is not None
         else "未计算",
-        help="正值表示公司得分低于市场基准，负值表示公司得分高于市场基准。",
     )
-    cols[3].metric("有证据评分覆盖", f"{artifact.scored_weight:.0%}")
+    cols[3].metric(
+        "战略目标差距",
+        f"{weighted_target_gap:+.1f}" if weighted_target_gap is not None else "未计算",
+        help="正值表示公司距离实现本项目战略意图仍有能力差距。",
+    )
+    cols[4].metric("有证据评分覆盖", f"{artifact.scored_weight:.0%}")
     st.write(artifact.overall_assessment)
 
-    st.markdown("#### 公司—市场基准能力雷达图")
-    st.caption("市场基准由经批准的直接同业、最佳实践或战略能力阈值转换为统一的0—100分口径。")
+    st.markdown("#### 公司—市场平均—战略目标能力雷达图")
+    st.caption(
+        "市场基准指同一市场、同类玩家在统一能力口径上的平均水平；战略目标要求分指实现本项目战略意图所需达到的能力水平。"
+    )
     render_scorecard_radar(artifact, key=f"scorecard_radar_{artifact.artifact_id}")
 
     with st.expander("Benchmark定义与依据", expanded=True):
@@ -163,6 +171,17 @@ def render(project: ProjectState | None) -> None:
             benchmark_label = f"{benchmark_score:.1f}/100" if benchmark_score is not None else "未计算"
             gap_label = f"{benchmark_gap:+.1f}" if benchmark_gap is not None else "未计算"
             st.write(f"**市场基准分：** {benchmark_label} · **基准差距：** {gap_label}")
+            strategic_target_score = getattr(item, "strategic_target_score", None)
+            strategic_target_gap = getattr(item, "strategic_target_gap", None)
+            target_score_label = (
+                f"{strategic_target_score:.1f}/100" if strategic_target_score is not None else "未计算"
+            )
+            target_gap_label = (
+                f"{strategic_target_gap:+.1f}" if strategic_target_gap is not None else "未计算"
+            )
+            st.write(f"**战略目标要求分：** {target_score_label} · **战略目标差距：** {target_gap_label}")
+            st.markdown("**核心量化衡量指标**")
+            render_bullet_points(getattr(item, "core_metrics", []), fallback="尚未定义")
             st.write(
                 "**市场位置判断：** "
                 + (getattr(item, "market_position_label", "") or "暂未判断")

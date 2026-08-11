@@ -46,6 +46,9 @@ class CompanyScoreDimension(BaseModel):
     score: float | None = Field(default=None, ge=0, le=100)
     benchmark_score: float | None = Field(default=None, ge=0, le=100)
     benchmark_gap: float | None = Field(default=None, ge=-100, le=100)
+    strategic_target_score: float | None = Field(default=None, ge=0, le=100)
+    strategic_target_gap: float | None = Field(default=None, ge=-100, le=100)
+    core_metrics: list[str] = Field(default_factory=list)
     market_position_label: str = ""
     score_rationale: str
     benchmark_ids: list[str] = Field(default_factory=list)
@@ -92,10 +95,12 @@ class CompanyScorecardArtifact(BaseModel):
     future_intelligence_id: str
     enterprise_sensing_id: str
     benchmarks: list[BenchmarkReference] = Field(min_length=1)
-    dimensions: list[CompanyScoreDimension] = Field(min_length=6, max_length=6)
+    dimensions: list[CompanyScoreDimension] = Field(min_length=4, max_length=8)
     weighted_score: float | None = Field(default=None, ge=0, le=100)
     weighted_benchmark_score: float | None = Field(default=None, ge=0, le=100)
     weighted_gap: float | None = Field(default=None, ge=-100, le=100)
+    weighted_strategic_target_score: float | None = Field(default=None, ge=0, le=100)
+    weighted_strategic_target_gap: float | None = Field(default=None, ge=-100, le=100)
     scored_weight: float = Field(ge=0, le=1)
     overall_assessment: str
     strategic_advantages: list[str] = Field(default_factory=list)

@@ -52,11 +52,13 @@ from src.services.action_planning import (
 from src.services.company_assessment import (
     CompanyAssessmentError,
     CompanyAssessmentService,
+    _dimension_specs_for,
     confirm_scorecard,
     review_score_dimension,
 )
 from src.services.strategy_report import generate_enterprise_decision_report
 from src.state.project import ProjectState
+from src.ui.scorecard_visuals import scorecard_comparison_rows
 
 
 class FakeModel:
@@ -328,8 +330,8 @@ def scorecard_payload(evidence_id: str, enterprise_id: str) -> dict:
     return {
         "benchmarks": [
             {
-                "name": "Evidence-backed strategic threshold",
-                "benchmark_type": "strategic_threshold",
+                "name": "Comparable player market average",
+                "benchmark_type": "direct_peer",
                 "rationale": "客户采购标准变化形成能力阈值",
                 "evidence_ids": [evidence_id],
             }
@@ -344,7 +346,7 @@ def scorecard_payload(evidence_id: str, enterprise_id: str) -> dict:
                     "future_readiness": 4,
                 },
                 "score_rationale": "企业渠道基础支持目标，但仍需能力补足。",
-                "benchmark_names": ["Evidence-backed strategic threshold"],
+                "benchmark_names": ["Comparable player market average"],
                 "external_evidence_ids": [evidence_id],
                 "enterprise_evidence_ids": [enterprise_id],
                 "strengths": ["现有渠道"],
@@ -423,14 +425,37 @@ def test_score_is_calculated_and_not_accepted_from_model() -> None:
     artifact = CompanyAssessmentService(FakeModel(payload), load_active_sop()).generate(project)
 
     assert artifact.weighted_score == 80.0
-    assert artifact.weighted_benchmark_score == 80.0
-    assert artifact.weighted_gap == 0.0
+    assert artifact.weighted_benchmark_score == 70.0
+    assert artifact.weighted_gap == -10.0
+    assert artifact.weighted_strategic_target_score is not None
+    assert artifact.weighted_strategic_target_score >= artifact.weighted_benchmark_score
+    assert artifact.weighted_strategic_target_gap is not None
     assert artifact.scored_weight == 1.0
     assert all(item.score == 80.0 for item in artifact.dimensions)
-    assert all(item.benchmark_score == 80.0 for item in artifact.dimensions)
-    assert all(item.benchmark_gap == 0.0 for item in artifact.dimensions)
-    assert all(item.market_position_label == "达到或接近市场基准" for item in artifact.dimensions)
+    assert all(item.benchmark_score == 70.0 for item in artifact.dimensions)
+    assert all(item.benchmark_gap == -10.0 for item in artifact.dimensions)
+    assert all(item.strategic_target_score is not None for item in artifact.dimensions)
+    assert all(item.core_metrics for item in artifact.dimensions)
+    assert all(item.market_position_label == "领先市场基准" for item in artifact.dimensions)
     assert all(item.confidence > 0 for item in artifact.dimensions)
+    comparison_rows = scorecard_comparison_rows(artifact)
+    assert len(comparison_rows) == 18
+    assert {row["系列"] for row in comparison_rows} == {
+        "公司得分",
+        "市场基准",
+        "战略目标要求",
+    }
+
+
+def test_score_dimensions_expand_for_strategy_specific_capabilities() -> None:
+    default_specs = _dimension_specs_for("提升重点医院覆盖率和销售执行")
+    adaptive_specs = _dimension_specs_for("推进AI数字化与本地化供应链能力建设")
+
+    assert len(default_specs) == 6
+    assert len(adaptive_specs) == 8
+    assert "digital_data" in adaptive_specs
+    assert "regulatory_localization" in adaptive_specs
+    assert sum(weight for _, weight in adaptive_specs.values()) == pytest.approx(1.0)
 
 
 def test_missing_model_linkage_uses_approved_research_and_enterprise_corpus() -> None:
@@ -443,7 +468,7 @@ def test_missing_model_linkage_uses_approved_research_and_enterprise_corpus() ->
     artifact = CompanyAssessmentService(FakeModel(payload), load_active_sop()).generate(project)
 
     assert artifact.dimensions[0].score is not None
-    assert artifact.dimensions[0].benchmark_score == 80.0
+    assert artifact.dimensions[0].benchmark_score == 70.0
     assert artifact.dimensions[0].benchmark_gap is not None
     assert evidence_id in artifact.dimensions[0].external_evidence_ids
     assert enterprise_id in artifact.dimensions[0].enterprise_evidence_ids
@@ -481,7 +506,7 @@ def test_scorecard_recovers_when_all_model_benchmark_ids_are_unknown() -> None:
     artifact = CompanyAssessmentService(FakeModel(payload), load_active_sop()).generate(project)
 
     assert artifact.weighted_score == 80.0
-    assert artifact.benchmarks[0].name == "战略目标能力阈值"
+    assert artifact.benchmarks[0].name == "可比市场玩家平均能力基准"
     assert artifact.benchmarks[0].evidence_ids == [evidence_id]
 
 
@@ -516,9 +541,10 @@ def test_scorecard_and_action_plan_require_human_review() -> None:
     project = project.model_copy(update={"action_plan_artifact": action_plan})
     report = generate_enterprise_decision_report(project)
     assert "公司能力评分" in report.markdown
-    assert "市场基准分" in report.markdown
+    assert "市场平均基准分" in report.markdown
+    assert "战略目标要求分" in report.markdown
     assert "基准差距" in report.markdown
-    assert "达到或接近市场基准" in report.markdown
+    assert "领先市场基准" in report.markdown
     assert "公司当前市场位置" in report.markdown
     assert "战略目标状态" in report.markdown
     assert "现有单产品销售能力与目标方案化能力之间仍有差距" in report.markdown

@@ -275,6 +275,8 @@ def generate_enterprise_decision_report(project: ProjectState) -> EnterpriseDeci
     weighted_gap = getattr(scorecard, "weighted_gap", None)
     if weighted_gap is None and weighted_benchmark_score is not None and scorecard.weighted_score is not None:
         weighted_gap = round(weighted_benchmark_score - scorecard.weighted_score, 1)
+    weighted_target_score = getattr(scorecard, "weighted_strategic_target_score", None)
+    weighted_target_gap = getattr(scorecard, "weighted_strategic_target_gap", None)
     general_body, general_references = _split_general_report(general.markdown)
     lines = [
         f"# {project.project_name} · 企业战略决策报告",
@@ -299,13 +301,19 @@ def generate_enterprise_decision_report(project: ProjectState) -> EnterpriseDeci
                 if weighted_benchmark_score is not None and weighted_gap is not None
                 else "当前资料尚不足以汇总市场基准综合得分"
             ),
+            (
+                f"实现企业战略意图所需的综合能力目标为{weighted_target_score:.1f}分，"
+                f"公司与战略目标的差距为{weighted_target_gap:+.1f}分"
+                if weighted_target_score is not None and weighted_target_gap is not None
+                else "战略目标要求分尚未汇总"
+            ),
             scorecard.overall_assessment,
         ),
         "",
         "## 8. 公司能力评分",
         "",
-        "| 评估维度 | 市场基准分 | 公司得分 | 基准差距 | 市场位置 | 公司当前市场位置 | 战略目标状态 | 核心差距 |",
-        "|---|---:|---:|---:|---|---|---|---|",
+        "| 评估维度 | 市场平均基准分 | 战略目标要求分 | 公司得分 | 市场基准差距 | 战略目标差距 | 市场位置 | 公司当前市场位置 | 战略目标状态 | 核心量化指标 | 核心差距 |",
+        "|---|---:|---:|---:|---:|---:|---|---|---|---|---|",
     ]
     for item in accepted_dimensions:
         score = f"{item.score:.1f}" if item.score is not None else "未评分"
@@ -313,11 +321,16 @@ def generate_enterprise_decision_report(project: ProjectState) -> EnterpriseDeci
         benchmark_score_label = f"{benchmark_score:.1f}" if benchmark_score is not None else "未计算"
         benchmark_gap = _benchmark_gap(item, scorecard)
         benchmark_gap_label = f"{benchmark_gap:+.1f}" if benchmark_gap is not None else "未计算"
+        strategic_target_score = getattr(item, "strategic_target_score", None)
+        target_score_label = f"{strategic_target_score:.1f}" if strategic_target_score is not None else "未计算"
+        strategic_target_gap = getattr(item, "strategic_target_gap", None)
+        target_gap_label = f"{strategic_target_gap:+.1f}" if strategic_target_gap is not None else "未计算"
+        core_metrics = "；".join(getattr(item, "core_metrics", [])) or "未定义"
         position_label = getattr(item, "market_position_label", "") or "暂未判断"
         lines.append(
-            f"| {item.title} | {benchmark_score_label} | {score} | {benchmark_gap_label} | "
-            f"{position_label} | {item.current_market_position} | {item.target_position} | "
-            f"{item.strategic_gap} |"
+            f"| {item.title} | {benchmark_score_label} | {target_score_label} | {score} | "
+            f"{benchmark_gap_label} | {target_gap_label} | {position_label} | {item.current_market_position} | "
+            f"{item.target_position} | {core_metrics} | {item.strategic_gap} |"
         )
     lines.extend(["", "### 8.1 战略优势", ""])
     _append_bullets(
