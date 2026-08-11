@@ -14,7 +14,52 @@ from src.services.report_generation import sanitize_formal_report
 from src.state.project import ProjectState
 
 
-LONG_REPORT = "# 中国IVD行业研究\n\n" + "中国体外诊断市场保持结构性发展，竞争格局持续演进。" * 35
+LONG_REPORT = """# 中国IVD行业研究
+
+## 1. 行业定义
+
+中国体外诊断市场边界清晰，临床需求持续增长。
+
+## 2. 行业赛道与产业链
+
+上游原料、中游试剂仪器和下游医疗机构共同构成产业链。
+
+## 3. 市场规模
+
+市场规模保持结构性增长，细分赛道增速出现分化。
+
+## 4. 竞争格局
+
+国际龙头与国产头部企业在不同技术平台持续竞争，竞争格局持续演进。
+
+## 5. 市场驱动因素
+
+临床需求、技术迭代和支付政策共同影响行业发展。
+
+## 6. 未来十年发展趋势与Future Outlook
+
+未来十年行业将向高临床价值、自动化和本土供应链方向演进。
+
+## 7. 企业战略意图与决策框架
+
+企业战略意图是扩大化学发光业务并提升重点客户渗透率。
+
+## 8. 公司能力评分
+
+公司能力评分需要与统一市场基准进行比较。
+
+## 9. 战略行动计划
+
+短期行动聚焦客户验证，长期行动聚焦产品和渠道能力建设。
+
+## 10. 推进顺序及组合风险
+
+行动应按照战略差距和资源依赖关系排序。
+
+## 附录：资料来源
+
+[1] 公开行业资料。
+"""
 
 
 class FakeModel:
@@ -102,6 +147,47 @@ def test_revision_turn_can_preserve_trace_amendments() -> None:
     )
 
     assert "产品层" in turn.trace_amendments["industry_analysis"]
+
+
+def test_future_only_revision_preserves_every_other_report_chapter() -> None:
+    class FutureOnlyModel:
+        def complete_json(self, messages, *, enable_thinking=False):
+            proposed = LONG_REPORT.replace(
+                "未来十年行业将向高临床价值、自动化和本土供应链方向演进。",
+                "未来十年行业将加快向高临床价值、智能自动化和韧性供应链方向演进。",
+            ).replace("公司能力评分需要与统一市场基准进行比较。", "错误覆盖评分章节。")
+            proposed = proposed.replace("短期行动聚焦客户验证", "错误覆盖行动计划")
+            return {
+                "assistant_analysis": "仅修改未来趋势。",
+                "recommendations": ["加强十年趋势判断"],
+                "proposed_markdown": proposed,
+            }, ModelResponse(content="{}")
+
+    item = project(enterprise=True)
+    artifact = ReviewerRevisionService(FutureOnlyModel()).analyze(
+        item,
+        "强化未来十年的趋势判断",
+        [RevisionTarget.FUTURE_INTELLIGENCE],
+    )
+    proposed = artifact.turns[-1].proposed_markdown
+
+    assert "智能自动化和韧性供应链" in proposed
+    assert "错误覆盖评分章节" not in proposed
+    assert "错误覆盖行动计划" not in proposed
+    assert "公司能力评分需要与统一市场基准进行比较。" in proposed
+    assert "短期行动聚焦客户验证" in proposed
+
+
+def test_scoped_revision_requires_an_explicit_target() -> None:
+    item = project()
+    service = ReviewerRevisionService(FakeModel())
+
+    try:
+        service.analyze(item, "请调整报告", [])
+    except Exception as exc:
+        assert "至少选择一个" in str(exc)
+    else:
+        raise AssertionError("empty revision scope must be rejected")
 
 
 def test_formal_report_sanitizer_keeps_internal_review_language_out_of_deliverable() -> None:

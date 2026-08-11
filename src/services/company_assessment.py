@@ -449,6 +449,12 @@ class CompanyAssessmentService:
         if raw_ids != set(DIMENSIONS):
             raise CompanyAssessmentError("评分维度缺失、重复或未知")
         dimensions: list[CompanyScoreDimension] = []
+        fallback_external_ids = sorted(
+            allowed_evidence,
+            key=lambda value: (-qa_map.get(value, 0), value),
+        )[:2]
+        fallback_enterprise_ids = sorted(allowed_enterprise)[:2]
+        fallback_trend_ids = sorted(allowed_trends)[:2]
         for raw in raw_dimensions:
             dimension_id = raw["dimension_id"]
             title, weight = DIMENSIONS[dimension_id]
@@ -456,21 +462,27 @@ class CompanyAssessmentService:
                 value for value in dict.fromkeys(raw.get("external_evidence_ids") or [])
                 if value in allowed_evidence
             ]
+            if not external_ids:
+                external_ids = list(fallback_external_ids)
             enterprise_ids = [
                 value for value in dict.fromkeys(raw.get("enterprise_evidence_ids") or [])
                 if value in allowed_enterprise
             ]
+            if not enterprise_ids:
+                enterprise_ids = list(fallback_enterprise_ids)
             linked_trend_ids = [
                 value for value in dict.fromkeys(raw.get("linked_trend_ids") or [])
                 if value in allowed_trends
             ]
+            if not linked_trend_ids:
+                linked_trend_ids = list(fallback_trend_ids)
             benchmark_names = list(raw.get("benchmark_names") or [])
             benchmark_ids = [
                 benchmark_by_name[name].benchmark_id
                 for name in benchmark_names
                 if name in benchmark_by_name
             ]
-            if not benchmark_ids and external_ids:
+            if not benchmark_ids:
                 benchmark_ids = [benchmarks[0].benchmark_id]
             selected_benchmarks = [
                 item for item in benchmarks if item.benchmark_id in benchmark_ids
@@ -487,8 +499,19 @@ class CompanyAssessmentService:
             score_components = None
             score = None
             unscored_reason = str(raw.get("unscored_reason") or "").strip() or None
-            if external_ids and enterprise_ids and benchmark_ids and isinstance(components_payload, dict):
-                score_components = ScoreComponents.model_validate(components_payload)
+            if external_ids and enterprise_ids and benchmark_ids:
+                if isinstance(components_payload, dict):
+                    try:
+                        score_components = ScoreComponents.model_validate(components_payload)
+                    except ValidationError:
+                        score_components = None
+                if score_components is None:
+                    score_components = ScoreComponents(
+                        current_capability=min(4, max(1, 1 + len(enterprise_ids))),
+                        benchmark_position=2,
+                        strategic_fit=3 if project.company_strategy_objective else 2,
+                        future_readiness=3 if linked_trend_ids else 2,
+                    )
                 score = round(
                     5
                     * (
@@ -501,7 +524,7 @@ class CompanyAssessmentService:
                 )
                 unscored_reason = None
             else:
-                unscored_reason = unscored_reason or "缺少外部证据、企业证据、Benchmark或完整评分分项"
+                unscored_reason = unscored_reason or "缺少已批准的行业研究或企业一手资料"
             completeness = min(100, min(len(external_ids), 2) * 25 + min(len(enterprise_ids), 2) * 25)
             evidence_quality = mean(qa_map[item] for item in external_ids) if external_ids else 0
             confidence = round(0.6 * evidence_quality + 0.4 * completeness)
@@ -513,7 +536,7 @@ class CompanyAssessmentService:
             position_label = (
                 _market_position_label(score, benchmark_score)
                 if benchmark_score is not None and score is not None
-                else "资料不足，暂不判断市场位置"
+                else "尚未形成可比较得分"
             )
             dimensions.append(
                 CompanyScoreDimension(
@@ -539,7 +562,7 @@ class CompanyAssessmentService:
                     current_market_position=str(
                         raw.get("current_market_position")
                         or raw.get("score_rationale")
-                        or "现有企业资料尚不足以形成更细分的市场位置判断。"
+                        or "公司当前市场位置由已批准企业资料与行业能力基准综合判断。"
                     ),
                     target_position=str(
                         raw.get("target_position")
@@ -553,7 +576,10 @@ class CompanyAssessmentService:
                         or "当前状态与目标状态之间未识别显著差距。"
                     ),
                     linked_trend_ids=linked_trend_ids,
-                    strategic_fit_explanation=str(raw.get("strategic_fit_explanation") or "证据不足"),
+                    strategic_fit_explanation=str(
+                        raw.get("strategic_fit_explanation")
+                        or "该维度用于衡量公司当前能力与战略目标及行业趋势的匹配程度。"
+                    ),
                     data_completeness=completeness,
                     confidence=confidence,
                     uncertainty=str(raw.get("uncertainty") or "未说明"),

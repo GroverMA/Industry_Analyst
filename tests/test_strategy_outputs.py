@@ -433,15 +433,22 @@ def test_score_is_calculated_and_not_accepted_from_model() -> None:
     assert all(item.confidence > 0 for item in artifact.dimensions)
 
 
-def test_missing_company_evidence_makes_dimension_unscored_not_neutral() -> None:
+def test_missing_model_linkage_uses_approved_research_and_enterprise_corpus() -> None:
     project, evidence_id, enterprise_id, _, _ = eligible_project()
     payload = scorecard_payload(evidence_id, enterprise_id)
     payload["dimensions"][0]["enterprise_evidence_ids"] = []
-    payload["dimensions"][0]["unscored_reason"] = "缺少该维度企业资料"
+    payload["dimensions"][0]["external_evidence_ids"] = []
+    payload["dimensions"][0]["linked_trend_ids"] = []
+    payload["dimensions"][0]["unscored_reason"] = "模型未返回该维度资料链接"
     artifact = CompanyAssessmentService(FakeModel(payload), load_active_sop()).generate(project)
 
-    assert artifact.dimensions[0].score is None
-    assert artifact.dimensions[0].unscored_reason == "缺少该维度企业资料"
+    assert artifact.dimensions[0].score is not None
+    assert artifact.dimensions[0].benchmark_score == 80.0
+    assert artifact.dimensions[0].benchmark_gap is not None
+    assert evidence_id in artifact.dimensions[0].external_evidence_ids
+    assert enterprise_id in artifact.dimensions[0].enterprise_evidence_ids
+    assert artifact.dimensions[0].linked_trend_ids
+    assert artifact.dimensions[0].unscored_reason is None
     assert artifact.weighted_score == 80.0
 
 

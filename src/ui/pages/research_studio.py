@@ -1875,10 +1875,11 @@ def _render_content_revision(project: ProjectState, report) -> None:
     targets = st.multiselect(
         "本轮审阅范围",
         target_options,
-        default=[RevisionTarget.REPORT],
+        default=[],
         format_func=target_labels.get,
         key=f"reviewer_targets_{project.project_id}_{len(artifact.turns)}",
     )
+    st.caption("只会修改本轮选中的模块；未选章节、Company Scorecard和Action Plan将保持原样。")
     message = st.text_area(
         "审阅意见、疑问或希望调整的观点",
         placeholder="例如：竞争格局需要增加国际玩家与国产头部公司的分层比较，并重新判断国产替代节奏。",
@@ -1892,10 +1893,12 @@ def _render_content_revision(project: ProjectState, report) -> None:
     ):
         try:
             with st.spinner("正在回到原始Prompt并分析本轮审阅意见…"):
+                if not targets:
+                    raise ReviewerRevisionError("请至少选择一个本轮审阅范围")
                 revised = reviewer_revision_service().analyze(
                     project,
                     message,
-                    targets or [RevisionTarget.REPORT],
+                    targets,
                     direct_draft=edited,
                 )
         except ReviewerRevisionError as exc:

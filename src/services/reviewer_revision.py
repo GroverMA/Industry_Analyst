@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
@@ -28,6 +29,131 @@ class StructuredModel(Protocol):
 
 class ReviewerRevisionError(ValueError):
     pass
+
+
+_H2_PATTERN = re.compile(r"(?m)^##\s+(.+?)\s*$")
+
+
+def _revision_target_for_heading(title: str) -> RevisionTarget:
+    """Map a deliverable chapter to the workpaper that owns it.
+
+    The mapping is deliberately semantic rather than number based because the
+    report outline is allowed to adapt to the user's prompt.  It is used as a
+    write boundary: an AI revision may replace only chapters owned by a target
+    explicitly selected by the reviewer.
+    """
+
+    normalized = re.sub(r"^\s*\d+(?:\.\d+)*[.、\s]*", "", title).strip().lower()
+    if any(token in normalized for token in ("附录", "资料来源", "reference", "引用来源")):
+        return RevisionTarget.REFERENCE_CHECK
+    if any(
+        token in normalized
+        for token in (
+            "company scorecard",
+            "公司能力评分",
+            "企业能力评分",
+            "企业战略意图",
+            "公司市场定位",
+            "战略优势",
+            "关键差距",
+        )
+    ):
+        return RevisionTarget.COMPANY_SCORECARD
+    if any(
+        token in normalized
+        for token in (
+            "action plan",
+            "行动计划",
+            "战略行动",
+            "推进顺序",
+            "组合风险",
+            "短期行动",
+            "长期行动",
+        )
+    ):
+        return RevisionTarget.ACTION_PLAN
+    if any(token in normalized for token in ("future", "未来", "趋势", "情景", "展望", "预测")):
+        return RevisionTarget.FUTURE_INTELLIGENCE
+    return RevisionTarget.INDUSTRY_ANALYSIS
+
+
+def _split_h2_sections(markdown: str) -> tuple[str, list[tuple[str, str]]]:
+    """Return the preamble and intact H2 chapter blocks."""
+
+    matches = list(_H2_PATTERN.finditer(markdown))
+    if not matches:
+        return markdown, []
+    preamble = markdown[: matches[0].start()]
+    sections: list[tuple[str, str]] = []
+    for index, match in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(markdown)
+        sections.append((match.group(1).strip(), markdown[match.start() : end]))
+    return preamble, sections
+
+
+def merge_scoped_revision(
+    current_markdown: str,
+    proposed_markdown: str,
+    targets: list[RevisionTarget],
+) -> str:
+    """Merge only selected report chapters and preserve all other bytes.
+
+    REPORT is the sole target that authorizes a whole-document rewrite.  For
+    every other target, the current report is the source of truth and proposed
+    H2 chapters are spliced into the matching semantic slots.  This prevents a
+    model from accidentally dropping scorecard/action-plan chapters while a
+    reviewer is only changing Future Intelligence.
+    """
+
+    selected = set(targets)
+    if not selected:
+        raise ReviewerRevisionError("请至少选择一个本轮审阅范围")
+    if RevisionTarget.REPORT in selected:
+        return proposed_markdown
+
+    current_preamble, current_sections = _split_h2_sections(current_markdown)
+    _, proposed_sections = _split_h2_sections(proposed_markdown)
+    if not current_sections:
+        raise ReviewerRevisionError("当前报告缺少可识别的章节结构，请改选“完整报告”进行修订")
+
+    replacement_sections = [
+        block
+        for title, block in proposed_sections
+        if _revision_target_for_heading(title) in selected
+    ]
+    if not replacement_sections:
+        labels = "、".join(item.value for item in targets)
+        raise ReviewerRevisionError(f"AI未返回本轮选中模块（{labels}）的完整章节，请重试")
+
+    output: list[str] = [current_preamble]
+    inserted = False
+    for title, block in current_sections:
+        owner = _revision_target_for_heading(title)
+        if owner in selected:
+            if not inserted:
+                output.extend(replacement_sections)
+                inserted = True
+            continue
+        output.append(block)
+    if not inserted:
+        # The selected target may be a new optional chapter.  Insert it before
+        # references so the appendix remains last.
+        reference_index = next(
+            (
+                index
+                for index, (title, _) in enumerate(current_sections)
+                if _revision_target_for_heading(title) == RevisionTarget.REFERENCE_CHECK
+            ),
+            len(current_sections),
+        )
+        output = [current_preamble]
+        for index, (_, block) in enumerate(current_sections):
+            if index == reference_index:
+                output.extend(replacement_sections)
+            output.append(block)
+        if reference_index == len(current_sections):
+            output.extend(replacement_sections)
+    return "".join(output)
 
 
 def current_report(project: ProjectState):
@@ -92,6 +218,8 @@ class ReviewerRevisionService:
         message = reviewer_message.strip()
         if not message:
             raise ReviewerRevisionError("请填写审阅意见或疑问")
+        if not targets:
+            raise ReviewerRevisionError("请至少选择一个本轮审阅范围")
         artifact = initialize_revision(project)
         report = current_report(project)
         analysis = project.industry_analysis_artifact
@@ -131,14 +259,17 @@ class ReviewerRevisionService:
                 }
                 for item in (future.trends if future else [])
             ],
+            # Always send the enterprise strategy context.  When it is not in
+            # the selected target list it becomes protected reference context,
+            # not editable scope.
             "company_scorecard": (
                 project.company_scorecard_artifact.model_dump(mode="json")
-                if project.company_scorecard_artifact and RevisionTarget.COMPANY_SCORECARD in targets
+                if project.company_scorecard_artifact
                 else None
             ),
             "action_plan": (
                 project.action_plan_artifact.model_dump(mode="json")
-                if project.action_plan_artifact and RevisionTarget.ACTION_PLAN in targets
+                if project.action_plan_artifact
                 else None
             ),
             "attention_points": reviewer_attention_points(project),
@@ -160,7 +291,10 @@ class ReviewerRevisionService:
                     "仅为本轮选中且确需调整的研究逻辑写出可追溯修订说明"
                 )
             },
-            "proposed_markdown": "完整、可独立交付的新版本报告Markdown",
+            "proposed_markdown": (
+                "完整、可独立交付的新版本报告Markdown；只允许改变本轮选中模块，"
+                "其余章节须逐字保留"
+            ),
         }
         messages = [
             ChatMessage(
@@ -168,8 +302,9 @@ class ReviewerRevisionService:
                 content=(
                     "你是行业研究报告的高级审阅编辑。先回到用户原始Prompt和已确认市场范围，分析"
                     "审阅者对报告、引用、行业分析、趋势、公司评分或行动计划提出的疑问，再给出"
-                    "有立场、可解释的推荐观点，并生成一份完整的新版本报告。可以调整章节标题、顺序、"
-                    "篇幅和结论强度，但必须保持逻辑完整并覆盖用户真正关心的问题。正式报告采用独立"
+                    "有立场、可解释的推荐观点，并生成一份完整的新版本报告。只有本轮审阅目标明确"
+                    "选中的章节可以调整标题、顺序、篇幅和结论强度；所有未选章节属于锁定内容，必须"
+                    "逐字保留，尤其不得删除或改写Company Scorecard和Action Plan。正式报告采用独立"
                     "第三方语气直接表达结论，不得出现内部ID、AI自述、系统流程、来源方叙述、证据缺口、"
                     "缺乏数据、无法量化、本模块只能覆盖、建议补充来源等措辞。市场规模必须给出估算值"
                     "或合理区间；无法直接获得时应以现有数字进行可解释的三角估算。审阅提醒只能出现在"
@@ -193,9 +328,15 @@ class ReviewerRevisionService:
         nested = payload.get("content_revision")
         if isinstance(nested, dict):
             payload = nested
-        proposed = sanitize_formal_report(str(payload.get("proposed_markdown") or ""))
-        if len(proposed) < 300:
+        proposed_raw = sanitize_formal_report(str(payload.get("proposed_markdown") or ""))
+        if len(proposed_raw) < 300:
             raise ReviewerRevisionError("AI返回的新版本报告不完整，请重试本轮审阅")
+        current_markdown = (
+            direct_draft.strip()
+            if direct_draft and direct_draft.strip()
+            else report.markdown
+        )
+        proposed = merge_scoped_revision(current_markdown, proposed_raw, targets)
         turn = RevisionTurn(
             reviewer_message=message,
             targets=targets or [RevisionTarget.REPORT],
