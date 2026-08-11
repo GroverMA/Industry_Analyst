@@ -41,7 +41,11 @@ from src.models.future import (
 )
 from src.models.report import GeneralReportArtifact
 from src.models.research import MethodologyTrace
-from src.models.strategy import StrategyReviewStatus
+from src.models.strategy import (
+    CompanyScorecardArtifact,
+    MARKET_AVERAGE_BY_DIMENSION,
+    StrategyReviewStatus,
+)
 from src.providers.base import ModelResponse, ProviderError
 from src.services.action_planning import (
     ActionPlanningError,
@@ -58,7 +62,10 @@ from src.services.company_assessment import (
 )
 from src.services.strategy_report import generate_enterprise_decision_report
 from src.state.project import ProjectState
-from src.ui.scorecard_visuals import scorecard_comparison_rows
+from src.ui.scorecard_visuals import (
+    build_scorecard_radar_figure,
+    scorecard_comparison_rows,
+)
 
 
 class FakeModel:
@@ -425,18 +432,24 @@ def test_score_is_calculated_and_not_accepted_from_model() -> None:
     artifact = CompanyAssessmentService(FakeModel(payload), load_active_sop()).generate(project)
 
     assert artifact.weighted_score == 80.0
-    assert artifact.weighted_benchmark_score == 70.0
-    assert artifact.weighted_gap == -10.0
+    assert artifact.weighted_benchmark_score == 57.9
+    assert artifact.weighted_gap == -22.1
     assert artifact.weighted_strategic_target_score is not None
     assert artifact.weighted_strategic_target_score >= artifact.weighted_benchmark_score
     assert artifact.weighted_strategic_target_gap is not None
     assert artifact.scored_weight == 1.0
     assert all(item.score == 80.0 for item in artifact.dimensions)
-    assert all(item.benchmark_score == 70.0 for item in artifact.dimensions)
-    assert all(item.benchmark_gap == -10.0 for item in artifact.dimensions)
+    assert all(
+        item.benchmark_score == MARKET_AVERAGE_BY_DIMENSION[item.dimension_id]
+        for item in artifact.dimensions
+    )
+    assert all(
+        item.benchmark_gap == round(float(item.benchmark_score) - float(item.score), 1)
+        for item in artifact.dimensions
+    )
     assert all(item.strategic_target_score is not None for item in artifact.dimensions)
     assert all(item.core_metrics for item in artifact.dimensions)
-    assert all(item.market_position_label == "领先市场基准" for item in artifact.dimensions)
+    assert all(item.market_position_label == "领先市场平均水平" for item in artifact.dimensions)
     assert all(item.confidence > 0 for item in artifact.dimensions)
     comparison_rows = scorecard_comparison_rows(artifact)
     assert len(comparison_rows) == 18
@@ -445,6 +458,42 @@ def test_score_is_calculated_and_not_accepted_from_model() -> None:
         "市场基准",
         "战略目标要求",
     }
+    radar = build_scorecard_radar_figure(artifact)
+    assert radar is not None
+    assert {trace.name for trace in radar.data} == {
+        "公司得分",
+        "市场基准",
+        "战略目标要求",
+    }
+    assert all(len(trace.r) == 7 for trace in radar.data)
+
+
+def test_legacy_scorecard_auto_upgrades_for_complete_radar() -> None:
+    project, evidence_id, enterprise_id, _, _ = eligible_project()
+    artifact = CompanyAssessmentService(
+        FakeModel(scorecard_payload(evidence_id, enterprise_id)),
+        load_active_sop(),
+    ).generate(project)
+    legacy_payload = artifact.model_dump(mode="json")
+    legacy_payload["weighted_benchmark_score"] = 90
+    legacy_payload["weighted_gap"] = 10
+    legacy_payload["weighted_strategic_target_score"] = None
+    legacy_payload["weighted_strategic_target_gap"] = None
+    for item in legacy_payload["dimensions"]:
+        item["benchmark_score"] = 90
+        item["benchmark_gap"] = 10
+        item["strategic_target_score"] = None
+        item["strategic_target_gap"] = None
+
+    upgraded = CompanyScorecardArtifact.model_validate(legacy_payload)
+
+    assert upgraded.weighted_benchmark_score == 57.9
+    assert upgraded.weighted_strategic_target_score is not None
+    assert all(35 <= float(item.benchmark_score) <= 78 for item in upgraded.dimensions)
+    assert all(item.strategic_target_score is not None for item in upgraded.dimensions)
+    radar = build_scorecard_radar_figure(upgraded)
+    assert radar is not None
+    assert len(radar.data) == 3
 
 
 def test_score_dimensions_expand_for_strategy_specific_capabilities() -> None:
@@ -468,7 +517,7 @@ def test_missing_model_linkage_uses_approved_research_and_enterprise_corpus() ->
     artifact = CompanyAssessmentService(FakeModel(payload), load_active_sop()).generate(project)
 
     assert artifact.dimensions[0].score is not None
-    assert artifact.dimensions[0].benchmark_score == 70.0
+    assert artifact.dimensions[0].benchmark_score == MARKET_AVERAGE_BY_DIMENSION["market_position"]
     assert artifact.dimensions[0].benchmark_gap is not None
     assert evidence_id in artifact.dimensions[0].external_evidence_ids
     assert enterprise_id in artifact.dimensions[0].enterprise_evidence_ids
@@ -544,7 +593,7 @@ def test_scorecard_and_action_plan_require_human_review() -> None:
     assert "市场平均基准分" in report.markdown
     assert "战略目标要求分" in report.markdown
     assert "基准差距" in report.markdown
-    assert "领先市场基准" in report.markdown
+    assert "领先市场平均水平" in report.markdown
     assert "公司当前市场位置" in report.markdown
     assert "战略目标状态" in report.markdown
     assert "现有单产品销售能力与目标方案化能力之间仍有差距" in report.markdown

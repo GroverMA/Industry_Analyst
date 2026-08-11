@@ -5,14 +5,26 @@ from __future__ import annotations
 import streamlit as st
 import plotly.graph_objects as go
 
+from src.models.strategy import derived_strategic_target, normalized_market_average
+
 
 def scorecard_comparison_rows(scorecard) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for order, item in enumerate(scorecard.dimensions):
         company_score = getattr(item, "score", None)
-        benchmark_score = getattr(item, "benchmark_score", None)
+        benchmark_score = normalized_market_average(
+            item.dimension_id,
+            getattr(item, "benchmark_score", None),
+        )
         target_score = getattr(item, "strategic_target_score", None)
-        if company_score is None or benchmark_score is None or target_score is None:
+        if target_score is None:
+            target_score = derived_strategic_target(
+                item.dimension_id,
+                benchmark_score,
+                getattr(scorecard, "strategy_objective_snapshot", ""),
+                getattr(item, "score_components", None),
+            )
+        if company_score is None:
             continue
         rows.extend(
             [
@@ -39,13 +51,11 @@ def scorecard_comparison_rows(scorecard) -> list[dict[str, object]]:
     return rows
 
 
-def render_scorecard_radar(scorecard, *, key: str) -> None:
-    """Render company, peer-average benchmark and strategic target polygons."""
-
+def build_scorecard_radar_figure(scorecard) -> go.Figure | None:
+    """Build the shared radar used by both research paths."""
     rows = scorecard_comparison_rows(scorecard)
     if len(rows) < 9:
-        st.info("至少需要三个已评分维度，才能形成公司—市场基准—战略目标雷达图。")
-        return
+        return None
     styles = {
         "公司得分": {"color": "#356B77", "dash": "solid", "fill": "toself"},
         "市场基准": {"color": "#D58A3A", "dash": "dot", "fill": "none"},
@@ -96,6 +106,16 @@ def render_scorecard_radar(scorecard, *, key: str) -> None:
             "angularaxis": {"gridcolor": "#E4EAEC", "linecolor": "#CAD5D9"},
         },
     )
+    return figure
+
+
+def render_scorecard_radar(scorecard, *, key: str) -> None:
+    """Render company, peer-average benchmark and strategic target polygons."""
+
+    figure = build_scorecard_radar_figure(scorecard)
+    if figure is None:
+        st.warning("当前项目尚未形成三个可比较的公司能力维度，请重新生成 Company Scorecard。")
+        return
     st.plotly_chart(
         figure,
         use_container_width=True,

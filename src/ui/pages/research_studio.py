@@ -1732,7 +1732,7 @@ def _render_scorecard_trace(project: ProjectState) -> None:
     score_cols = st.columns(4)
     score_cols[0].metric(
         "企业综合评分",
-        f"{scorecard.weighted_score:.1f}" if scorecard.weighted_score is not None else "资料不足",
+        f"{scorecard.weighted_score:.1f}" if scorecard.weighted_score is not None else "待生成",
     )
     weighted_benchmark_score = getattr(scorecard, "weighted_benchmark_score", None)
     weighted_gap = getattr(scorecard, "weighted_gap", None)
@@ -1742,18 +1742,21 @@ def _render_scorecard_trace(project: ProjectState) -> None:
         "市场基准分",
         f"{weighted_benchmark_score:.1f}"
         if weighted_benchmark_score is not None
-        else "资料不足",
+        else "待生成",
     )
     score_cols[2].metric(
         "战略目标要求分",
-        f"{weighted_target_score:.1f}" if weighted_target_score is not None else "资料不足",
+        f"{weighted_target_score:.1f}" if weighted_target_score is not None else "待生成",
     )
     score_cols[3].metric(
         "战略目标差距",
-        f"{weighted_target_gap:+.1f}" if weighted_target_gap is not None else "资料不足",
+        f"{weighted_target_gap:+.1f}" if weighted_target_gap is not None else "待生成",
     )
     st.write(scorecard.overall_assessment)
-    st.caption("市场基准为同类市场玩家平均能力；战略目标要求分为实现用户战略意图所需达到的能力阈值。")
+    st.caption(
+        "市场基准为同类市场全部可比玩家在核心量化指标上的实际平均能力，并非理想状态；"
+        "战略目标要求分为实现用户战略意图所需达到的能力阈值。"
+    )
     render_scorecard_radar(scorecard, key=f"review_scorecard_radar_{scorecard.artifact_id}")
     st.dataframe(
         [

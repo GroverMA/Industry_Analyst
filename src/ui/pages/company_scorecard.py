@@ -126,7 +126,8 @@ def render(project: ProjectState | None) -> None:
 
     st.markdown("#### 公司—市场平均—战略目标能力雷达图")
     st.caption(
-        "市场基准指同一市场、同类玩家在统一能力口径上的平均水平；战略目标要求分指实现本项目战略意图所需达到的能力水平。"
+        "市场基准指同一市场所有可比玩家在各维度核心量化指标上的实际平均水平，不是理想状态或头部玩家水平；"
+        "战略目标要求分指实现本项目战略意图所需达到的能力阈值。"
     )
     render_scorecard_radar(artifact, key=f"scorecard_radar_{artifact.artifact_id}")
 
